@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.5
+
+- **Fix project filter on long paths** -- `list-sessions -p` filtered against the 30-char display-truncated project name, so long project paths were unsearchable. Filter now runs before truncation.
+
 ## 1.0.4
 
 - **Fix interactive modes crashing** -- `sessions` and interactive agent selection (`agent-watch` with no args) silently exited when any session/agent file had incomplete JSON (e.g. active sessions). Replaced upfront preview generation with lazy on-demand previews via fzf `--preview`, fixing both the crash and making fzf appear instantly regardless of file count.
