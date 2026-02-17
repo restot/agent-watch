@@ -11,7 +11,7 @@ CLI tool for monitoring and browsing Claude Code sub-agent and session transcrip
 - Live tailing of active sub-agents
 - Pagination with token budgets for large sessions (`--limit`/`--offset`)
 - Auto-detection of agent vs session IDs
-- Wait for sub-agent completion (polls PID files + JSONL staleness)
+- Wait for sub-agent completion -- block until agents finish using PID tracking, token logs, and JSONL staleness detection
 
 ## Installation
 
@@ -56,6 +56,7 @@ Non-interactive commands (safe for agents):
   session <id>        View a specific session
   <id>                Auto-detect: view agent or session by ID
   wait <id> [id...]   Block until agent(s) complete
+  update              Self-update to the latest release
 
 Interactive commands (require TTY):
   (none)              fzf selection of sub-agents
@@ -116,6 +117,20 @@ Wait for sub-agents to finish before continuing:
 agent-watch wait abc123 def456
 ```
 
+The `wait` command is a core feature for orchestrating parallel sub-agent workflows. It blocks until all specified agents complete, using three detection methods in order:
+
+1. **Token log** -- checks `~/.claude/subagent-tokens.log` for hook-based completion entries
+2. **PID liveness** -- verifies the Claude process is still running via PID files in `~/.claude/.agent-pids/`
+3. **JSONL staleness** -- falls back to checking if the agent's JSONL file hasn't been modified for 5 minutes (for agents without PID tracking)
+
+This enables patterns like launching multiple agents in parallel, then waiting for all of them before proceeding:
+
+```sh
+# In a Claude Code session, launch agents then:
+agent-watch wait abc123 def456 ghi789
+# Continues only after all three complete
+```
+
 Browse sessions interactively with fzf:
 
 ```sh
@@ -134,7 +149,6 @@ agent-watch reads Claude Code's JSONL session and agent files from `~/.claude/pr
 
 JSON parsing is handled by jq. Interactive selection uses fzf with preview windows that show session metadata and recent messages. Output is colorized with role-based markers (`[USER]`, `[ASST]`, `[TOOL]`, `[RESULT]`) for readability.
 
-The `wait` command polls PID files and checks JSONL staleness to determine when a sub-agent has completed. It checks three signals in order: token log entries (hook-based completion), process liveness via PID files, and JSONL modification time as a fallback for agents without PID tracking.
 
 ## Contributing
 

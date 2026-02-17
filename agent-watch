@@ -928,6 +928,7 @@ Non-interactive commands (safe for agents):
   session <id>        View a specific session
   <id>                Auto-detect: view agent or session by ID
   wait <id> [id...]   Block until agent(s) complete
+  update              Self-update to the latest release
 
 Interactive commands (require TTY):
   (none)              fzf selection of sub-agents
@@ -969,7 +970,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --debug)   DEBUG=1; shift ;;
         --help)    show_usage; exit 0 ;;
-        --version) echo "agent-watch $VERSION"; exit 0 ;;
+        -v|-V|--version) ARGS+=("version"); shift ;;
         --offset)  OFFSET="${2:?--offset requires a value}"; shift 2 ;;
         --limit)   LIMIT="${2:?--limit requires a value}"; shift 2 ;;
         *)         ARGS+=("$1"); shift ;;
@@ -997,6 +998,29 @@ case "${1:-}" in
     wait)
         shift
         cmd_wait "$@"
+        ;;
+    update)
+        self=$(command -v agent-watch 2>/dev/null || echo "$0")
+        latest=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/restot/agent-watch/releases/latest 2>/dev/null | grep -oE '[^/]+$')
+        if [[ -z "$latest" ]]; then
+            die "Could not check for updates"
+        fi
+        if [[ "$latest" == "v$VERSION" ]]; then
+            echo "Already up to date (v$VERSION)"
+            exit 0
+        fi
+        echo "Updating: v$VERSION -> $latest"
+        curl -fsSL "https://github.com/restot/agent-watch/releases/latest/download/agent-watch" -o "$self" && chmod +x "$self"
+        echo "Done."
+        ;;
+    -v|-V|--version|version)
+        echo "agent-watch $VERSION"
+        latest=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/restot/agent-watch/releases/latest 2>/dev/null | grep -oE '[^/]+$')
+        if [[ -n "$latest" && "$latest" != "v$VERSION" ]]; then
+            echo -e "${YELLOW}Update available: ${latest}${NC}  (current: v${VERSION})"
+            echo "  agent-watch update"
+        fi
+        exit 0
         ;;
     -h|--help|help)
         show_usage
