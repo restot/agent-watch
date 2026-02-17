@@ -1,0 +1,141 @@
+# agent-watch
+
+CLI tool for monitoring and browsing Claude Code sub-agent and session transcripts.
+
+## What it does
+
+- Browse and search Claude Code session history and sub-agent transcripts
+- Rich metadata headers showing model, version, branch, project, timestamps, message count, token usage
+- Interactive fzf-based selection with previews
+- Non-interactive commands safe for use by Claude Code agents themselves
+- Live tailing of active sub-agents
+- Pagination with token budgets for large sessions (`--limit`/`--offset`)
+- Auto-detection of agent vs session IDs
+- Wait for sub-agent completion (polls PID files + JSONL staleness)
+
+## Installation
+
+### Dependencies
+
+- **bash 4+** (macOS ships bash 3 -- install via `brew install bash`)
+- **jq** -- JSON parsing (`brew install jq`)
+- **fzf** -- interactive selection and previews (`brew install fzf`), only needed for interactive mode
+- **bc** -- token formatting (optional, usually pre-installed)
+
+### Setup
+
+```sh
+git clone https://github.com/restot/agent-watch.git
+cd agent-watch
+chmod +x agent-watch
+```
+
+Symlink or copy to somewhere in your PATH:
+
+```sh
+# Option A: Claude Code bin directory
+mkdir -p ~/.claude/bin
+ln -sf "$(pwd)/agent-watch" ~/.claude/bin/agent-watch
+
+# Option B: Local bin
+ln -sf "$(pwd)/agent-watch" ~/.local/bin/agent-watch
+```
+
+Make sure the target directory is in your `PATH`.
+
+## Usage
+
+```
+Usage: agent-watch [flags] [command] [args]
+
+Non-interactive commands (safe for agents):
+  list [count]        List recent sub-agents (default: 20)
+  list-sessions [n]   List all sessions (or last n)
+    -p, --project <name>  Filter by project (case-insensitive partial match)
+  view [id]           View agent transcript (most recent if no id)
+  session <id>        View a specific session
+  <id>                Auto-detect: view agent or session by ID
+  wait <id> [id...]   Block until agent(s) complete
+
+Interactive commands (require TTY):
+  (none)              fzf selection of sub-agents
+  sessions [id]       fzf browser for sessions (or view specific session by ID)
+  watch [id]          Live tail of agent output
+
+All views display a metadata header:
+  Model, Version, Branch, Project, Started/Ended, Messages, Tokens
+  Sub-agents also show Slug; Permission shown when available.
+
+Pagination (for large sessions/agents):
+  --limit N           Token budget (chars/4); prints NEXT_OFFSET=M when exceeded
+  --offset N          Skip first N messages (combine with --limit to paginate)
+
+Other flags:
+  --debug             Show debug output
+  --help              Show this help message
+  --version           Show version
+```
+
+## Examples
+
+List the 10 most recent sub-agents:
+
+```sh
+agent-watch list 10
+```
+
+View the most recent agent transcript:
+
+```sh
+agent-watch view
+```
+
+View a specific session or agent by ID (auto-detected):
+
+```sh
+agent-watch abc123de
+```
+
+Filter sessions by project name:
+
+```sh
+agent-watch list-sessions -p my-project
+```
+
+Paginate through a large session:
+
+```sh
+agent-watch session abc123de --limit 5000
+# Output includes NEXT_OFFSET=M if truncated
+agent-watch session abc123de --offset 50 --limit 5000
+```
+
+Wait for sub-agents to finish before continuing:
+
+```sh
+agent-watch wait abc123 def456
+```
+
+Browse sessions interactively with fzf:
+
+```sh
+agent-watch sessions
+```
+
+Live tail an active sub-agent:
+
+```sh
+agent-watch watch
+```
+
+## How it works
+
+agent-watch reads Claude Code's JSONL session and agent files from `~/.claude/projects/`. It parses metadata from the first few entries in each file (model, version, branch, timestamps) and aggregates token usage across all assistant entries.
+
+JSON parsing is handled by jq. Interactive selection uses fzf with preview windows that show session metadata and recent messages. Output is colorized with role-based markers (`[USER]`, `[ASST]`, `[TOOL]`, `[RESULT]`) for readability.
+
+The `wait` command polls PID files and checks JSONL staleness to determine when a sub-agent has completed. It checks three signals in order: token log entries (hook-based completion), process liveness via PID files, and JSONL modification time as a fallback for agents without PID tracking.
+
+## License
+
+MIT
