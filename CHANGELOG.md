@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.4
+
+- **Fix interactive modes crashing** -- `sessions` and interactive agent selection (`agent-watch` with no args) silently exited when any session/agent file had incomplete JSON (e.g. active sessions). Replaced upfront preview generation with lazy on-demand previews via fzf `--preview`, fixing both the crash and making fzf appear instantly regardless of file count.
+- **`view` and `watch` now work with sessions** -- previously only resolved sub-agent IDs. Now auto-detects agent or session ID, and no-arg defaults fall back to most recent session if no agents exist.
+- **`list -p` project filter** -- `list` command now supports `-p`/`--project` for filtering agents by project name, matching `list-sessions`.
+
 ## 1.0.3
 
 - **Fix self-update crash** -- `update` command was overwriting the running script mid-execution, causing bash to read corrupted content and error out. Now downloads to a temp file and atomically replaces via `mv`.

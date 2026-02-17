@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.3"
+VERSION="1.0.4"
 PROJECTS_DIR="$HOME/.claude/projects"
 DEBUG=0
 OFFSET=0
@@ -67,7 +67,7 @@ format_agent_line() {
     project=$(echo "$filepath" | grep -oE '[^/]+/[^/]+/subagents' | cut -d'/' -f1 | sed "s/-${_HOME_PATTERN}-//" | sed 's/-/\//g')
 
     # Get last activity type
-    last_type=$(tail -1 "$filepath" 2>/dev/null | jq -r '.type // "?"' 2>/dev/null)
+    last_type=$(tail -1 "$filepath" 2>/dev/null | jq -r '.type // "?"' 2>/dev/null) || last_type="?"
 
     # Get message count
     msg_count=$(wc -l < "$filepath" 2>/dev/null | tr -d ' ')
@@ -111,7 +111,7 @@ _print_metadata_header() {
         else empty end
     ' 2>/dev/null)
 
-    end_time=$(tail -1 "$filepath" | jq -r '.timestamp // "?"' 2>/dev/null)
+    end_time=$(tail -1 "$filepath" | jq -r '.timestamp // "?"' 2>/dev/null) || end_time="?"
     msg_count=$(wc -l < "$filepath" | tr -d ' ')
 
     # --- token totals (streaming jq, no slurp) ---
@@ -482,15 +482,39 @@ cmd_sessions() {
         die "No sessions found"
     fi
 
-    # Create temp dir for preview cache
-    local cache_dir
-    cache_dir=$(mktemp -d)
-    trap "rm -rf '$cache_dir'" EXIT
-
     # Batch preload all metadata
     _preload_session_data "$files"
     local now
     now=$(date +%s)
+
+    # Preview script for fzf (runs on-demand per item, not upfront for all)
+    local preview_script
+    preview_script=$(mktemp)
+    trap "rm -f '$preview_script'" EXIT
+    cat > "$preview_script" << 'PREVIEW_SCRIPT'
+#!/usr/bin/env bash
+set +e
+f="$1"
+sid=$(basename "$f" .jsonl)
+msgs=$(wc -l < "$f" 2>/dev/null | tr -d ' ')
+echo -e "\033[0;36mSession: $sid\033[0m"
+echo -e "\033[2mMessages:   \033[0m${msgs}"
+echo -e "\033[2m───────────────────────────────────────\033[0m"
+echo ""
+head -30 "$f" 2>/dev/null | jq -r '
+    if .type == "user" then
+        "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)[:300]
+    elif .type == "assistant" then
+        (.message.content // [])[] |
+        if .type == "text" then
+            "\u001b[0;35m[ASST]\u001b[0m " + .text[:300]
+        elif .type == "tool_use" then
+            "\u001b[0;34m[TOOL]\u001b[0m \u001b[0;33m" + .name + "\u001b[0m " + (.input | tostring)[:100]
+        else empty end
+    else empty end
+' 2>/dev/null
+PREVIEW_SCRIPT
+    chmod +x "$preview_script"
 
     local fzf_out key selection filepath
     fzf_out=$(while IFS= read -r filepath; do
@@ -523,29 +547,13 @@ cmd_sessions() {
         project_name="${project_name//-//}"
         project_name="${project_name:0:30}"
 
-        # Write preview to cache file (rich metadata + first exchanges)
-        local preview_file="$cache_dir/$short_id"
-        {
-            _print_metadata_header "$filepath" "Session: $session_id"
-            head -20 "$filepath" 2>/dev/null | jq -r '
-                if .type == "user" then
-                    "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)[:200]
-                elif .type == "assistant" then
-                    (.message.content // [])[] |
-                    if .type == "text" then
-                        "\u001b[0;35m[ASST]\u001b[0m " + .text[:200]
-                    else empty end
-                else empty end
-            ' 2>/dev/null
-        } > "$preview_file"
-
-        printf "%-1s %-8s  %-11s  %4s  %-30s  %-60s\t%s\t%s\n" \
-            "$st" "$short_id" "$mod_date $mod_time" "$msg_count" "$project_name" "$first_prompt" "$filepath" "$preview_file"
+        printf "%-1s %-8s  %-11s  %4s  %-30s  %-60s\t%s\n" \
+            "$st" "$short_id" "$mod_date $mod_time" "$msg_count" "$project_name" "$first_prompt" "$filepath"
     done <<< "$files" | \
         fzf --ansi \
             --delimiter='\t' \
             --header="enter=watch | alt-w=view | alt-f=full" \
-            --preview="cat {3}" \
+            --preview="$preview_script {2}" \
             --preview-window=right:50% \
             --expect=alt-w,alt-f \
             --with-nth=1) || exit 0
@@ -559,8 +567,8 @@ cmd_sessions() {
 
     [[ ! -f "$filepath" ]] && die "Session file not found: $filepath"
 
-    # Clean up cache before running view commands
-    rm -rf "$cache_dir"
+    # Clean up
+    rm -f "$preview_script"
     trap - EXIT
 
     if [[ "$key" == "alt-w" ]]; then
@@ -573,25 +581,45 @@ cmd_sessions() {
 }
 
 cmd_list() {
-    local count="${1:-20}"
+    local count=20
+    local project_filter=""
 
-    echo -e "${BLUE}Recent sub-agents (newest first):${NC}"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -p|--project) project_filter="$2"; shift 2 ;;
+            *) count="$1"; shift ;;
+        esac
+    done
+
+    if [[ -n "$project_filter" ]]; then
+        echo -e "${BLUE}Sub-agents for project matching '${project_filter}' (newest first):${NC}"
+    else
+        echo -e "${BLUE}Recent sub-agents (newest first):${NC}"
+    fi
     echo ""
     printf "%-3s %-10s %-6s %-12s %-6s %s\n" "" "AGENT" "TIME" "LAST" "MSGS" "PROJECT"
     printf "%-3s %-10s %-6s %-12s %-6s %s\n" "─" "──────────" "─────" "──────────" "────" "───────"
 
-    get_agent_files | head -"$count" | while read -r filepath; do
+    local printed=0
+    get_agent_files | while read -r filepath; do
         [[ -z "$filepath" ]] && continue
+        [[ $printed -ge $count ]] && break
         local line
         line=$(format_agent_line "$filepath")
         local status agent_id mod_time last_type msg_count project
         IFS='|' read -r status agent_id mod_time last_type msg_count project _ <<< "$line"
+
+        # Filter by project (case-insensitive)
+        if [[ -n "$project_filter" ]]; then
+            [[ "${project,,}" != *"${project_filter,,}"* ]] && continue
+        fi
 
         if [[ "$status" == "●" ]]; then
             printf "${GREEN}%-3s${NC} %-10s %-6s %-12s %-6s %s\n" "$status" "$agent_id" "$mod_time" "[$last_type]" "$msg_count" "$project"
         else
             printf "%-3s %-10s %-6s %-12s %-6s %s\n" "$status" "$agent_id" "$mod_time" "[$last_type]" "$msg_count" "$project"
         fi
+        ((printed++)) || true
     done
 }
 
@@ -690,20 +718,43 @@ cmd_interactive() {
         die "No sub-agents found"
     fi
 
-    # Create temp dir for preview cache
-    local cache_dir
-    cache_dir=$(mktemp -d)
-    trap "rm -rf '$cache_dir'" EXIT
+    # Preview script for fzf (runs on-demand per item, not upfront for all)
+    local preview_script
+    preview_script=$(mktemp)
+    trap "rm -f '$preview_script'" EXIT
+    cat > "$preview_script" << 'PREVIEW_SCRIPT'
+#!/usr/bin/env bash
+set +e
+f="$1"
+aid=$(basename "$f" .jsonl | sed 's/agent-//')
+msgs=$(wc -l < "$f" 2>/dev/null | tr -d ' ')
+echo -e "\033[0;36mAgent: $aid\033[0m"
+echo -e "\033[2mMessages:   \033[0m${msgs}"
+echo -e "\033[2m───────────────────────────────────────\033[0m"
+echo ""
+head -30 "$f" 2>/dev/null | jq -r '
+    if .type == "user" then
+        "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)[:300]
+    elif .type == "assistant" then
+        (.message.content // [])[] |
+        if .type == "text" then
+            "\u001b[0;35m[ASST]\u001b[0m " + .text[:300]
+        elif .type == "tool_use" then
+            "\u001b[0;34m[TOOL]\u001b[0m \u001b[0;33m" + .name + "\u001b[0m " + (.input | tostring)[:100]
+        else empty end
+    else empty end
+' 2>/dev/null
+PREVIEW_SCRIPT
+    chmod +x "$preview_script"
 
-    # Build list with preview files
     local fzf_out key selection filepath
     fzf_out=$(echo "$files" | while read -r filepath; do
         [[ -z "$filepath" ]] && continue
 
         local agent_id project last_type msg_count mod_time st
         agent_id=$(basename "$filepath" .jsonl | sed 's/agent-//')
-        project=$(echo "$filepath" | grep -oE '[^/]+/[^/]+/subagents' | cut -d'/' -f1 | sed "s/-${_HOME_PATTERN}-//" | sed 's/-/\//g' | cut -c1-40)
-        last_type=$(tail -1 "$filepath" 2>/dev/null | jq -r '.type // "?"' 2>/dev/null)
+        project=$(echo "$filepath" | grep -oE '[^/]+/[^/]+/subagents' | cut -d'/' -f1 | sed "s/-${_HOME_PATTERN}-//" | sed 's/-/\//g' | cut -c1-40) || project="?"
+        last_type=$(tail -1 "$filepath" 2>/dev/null | jq -r '.type // "?"' 2>/dev/null) || last_type="?"
         msg_count=$(wc -l < "$filepath" 2>/dev/null | tr -d ' ')
         mod_time=$(stat -f "%Sm" -t "%H:%M" "$filepath" 2>/dev/null || stat -c "%y" "$filepath" 2>/dev/null | cut -d' ' -f2 | cut -d':' -f1,2)
 
@@ -712,29 +763,12 @@ cmd_interactive() {
         mod_epoch=$(stat -f "%m" "$filepath" 2>/dev/null || stat -c "%Y" "$filepath" 2>/dev/null)
         [[ $((now - mod_epoch)) -lt 30 ]] && st="●" || st=" "
 
-        # Write preview to cache file (rich metadata + first prompt)
-        local preview_file="$cache_dir/$agent_id"
-        {
-            _print_metadata_header "$filepath" "Agent: $agent_id"
-            head -20 "$filepath" 2>/dev/null | jq -r '
-                if .type == "user" then
-                    "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)[:200]
-                elif .type == "assistant" then
-                    (.message.content // [])[] |
-                    if .type == "text" then
-                        "\u001b[0;35m[ASST]\u001b[0m " + .text[:200]
-                    else empty end
-                else empty end
-            ' 2>/dev/null
-        } > "$preview_file"
-
-        # Formatted display line + filepath + preview file
-        printf "%-1s %-9s %-5s %-10s %4s  %-40s\t%s\t%s\n" "$st" "$agent_id" "$mod_time" "$last_type" "$msg_count" "$project" "$filepath" "$preview_file"
+        printf "%-1s %-9s %-5s %-10s %4s  %-40s\t%s\n" "$st" "$agent_id" "$mod_time" "$last_type" "$msg_count" "$project" "$filepath"
     done | \
         fzf --ansi \
             --delimiter='\t' \
             --header="enter=watch | alt-w=view | alt-f=full" \
-            --preview="cat {3}" \
+            --preview="$preview_script {2}" \
             --preview-window=right:50% \
             --expect=alt-w,alt-f \
             --with-nth=1) || exit 0
@@ -752,8 +786,8 @@ cmd_interactive() {
 
     [[ ! -f "$filepath" ]] && die "Agent file not found: $filepath"
 
-    # Clean up cache before running agent commands
-    rm -rf "$cache_dir"
+    # Clean up
+    rm -f "$preview_script"
     trap - EXIT
 
     if [[ "$key" == "alt-w" ]]; then
@@ -766,51 +800,43 @@ cmd_interactive() {
     fi
 }
 
-cmd_view() {
+_resolve_id() {
+    # Resolve an input (filepath, agent ID, or session ID) to a JSONL filepath.
+    # Prints the resolved path. Dies if nothing found.
     local input="$1"
-    local filepath
 
     if [[ -z "$input" ]]; then
-        # View most recent
-        filepath=$(get_agent_files | head -1)
-        if [[ -z "$filepath" ]]; then
-            die "No sub-agents found"
-        fi
-    elif [[ -f "$input" ]]; then
-        # Direct filepath
-        filepath="$input"
-    else
-        # Find by ID
-        filepath=$(find "$PROJECTS_DIR" -name "agent-${input}*.jsonl" -type f 2>/dev/null | head -1)
-        if [[ -z "$filepath" ]]; then
-            die "Agent $input not found"
-        fi
+        # Most recent agent, then most recent session
+        local f
+        f=$(get_agent_files | head -1)
+        [[ -z "$f" ]] && f=$(get_session_files | head -1)
+        [[ -z "$f" ]] && die "No agents or sessions found"
+        echo "$f"
+        return
     fi
 
+    if [[ -f "$input" ]]; then
+        echo "$input"
+        return
+    fi
+
+    # Try agent ID first, then session ID
+    local f
+    f=$(find "$PROJECTS_DIR" -name "agent-${input}*.jsonl" -type f 2>/dev/null | head -1)
+    [[ -z "$f" ]] && f=$(find "$PROJECTS_DIR" -maxdepth 2 -name "${input}*.jsonl" -type f 2>/dev/null | grep -v '/subagents/' | head -1)
+    [[ -z "$f" ]] && die "No agent or session found matching '$input'"
+    echo "$f"
+}
+
+cmd_view() {
+    local filepath
+    filepath=$(_resolve_id "${1:-}")
     view_agent "$filepath"
 }
 
 cmd_watch() {
-    local input="$1"
     local filepath
-
-    if [[ -z "$input" ]]; then
-        # Watch most recent
-        filepath=$(get_agent_files | head -1)
-        if [[ -z "$filepath" ]]; then
-            die "No sub-agents found"
-        fi
-    elif [[ -f "$input" ]]; then
-        # Direct filepath
-        filepath="$input"
-    else
-        # Find by ID
-        filepath=$(find "$PROJECTS_DIR" -name "agent-${input}*.jsonl" -type f 2>/dev/null | head -1)
-        if [[ -z "$filepath" ]]; then
-            die "Agent $input not found"
-        fi
-    fi
-
+    filepath=$(_resolve_id "${1:-}")
     watch_agent "$filepath"
 }
 
@@ -922,6 +948,7 @@ Usage: agent-watch [command] [args] [flags]
 
 Non-interactive commands (safe for agents):
   list [count]        List recent sub-agents (default: 20)
+    -p, --project <name>  Filter by project (case-insensitive partial match)
   list-sessions [n]   List all sessions (or last n)
     -p, --project <name>  Filter by project (case-insensitive partial match)
   view [id]           View agent transcript (most recent if no id)
@@ -990,7 +1017,8 @@ case "${1:-}" in
         cmd_list_sessions "$@"
         ;;
     list)
-        cmd_list "${2:-20}"
+        shift
+        cmd_list "$@"
         ;;
     view)
         cmd_view "${2:-}"

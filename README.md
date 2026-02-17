@@ -79,6 +79,7 @@ Usage: agent-watch [command] [args] [flags]
 
 Non-interactive commands (safe for agents):
   list [count]        List recent sub-agents (default: 20)
+    -p, --project <name>  Filter by project (case-insensitive partial match)
   list-sessions [n]   List all sessions (or last n)
     -p, --project <name>  Filter by project (case-insensitive partial match)
   view [id]           View agent transcript (most recent if no id)
@@ -131,9 +132,10 @@ View a specific session or agent by ID (auto-detected):
 agent-watch abc123de
 ```
 
-Filter sessions by project name:
+Filter agents or sessions by project name:
 
 ```sh
+agent-watch list -p my-project
 agent-watch list-sessions -p my-project
 ```
 
@@ -205,8 +207,9 @@ JSON parsing is handled by jq. Interactive selection uses fzf with preview windo
 
 ## Wiki
 
-See the [wiki](https://github.com/restot/agent-watch/wiki) for advanced setup guides:
+See the [wiki](https://github.com/restot/agent-watch/wiki) for guides and screenshots:
 
+- [UI Overview](https://github.com/restot/agent-watch/wiki/UI-Overview) -- screenshots of interactive session browsing, agent history, transcript view, and pagination
 - [Token Log & PID Tracking](https://github.com/restot/agent-watch/wiki/Token-Log-Setup) -- Claude Code hooks for faster `wait` detection and token usage logging
 
 ## Contributing
