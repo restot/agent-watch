@@ -22,26 +22,14 @@ CLI tool for monitoring and browsing Claude Code sub-agent and session transcrip
 - **fzf** -- interactive selection and previews (`brew install fzf`), only needed for interactive mode
 - **bc** -- token formatting (optional, usually pre-installed)
 
-### Setup
+### Install
 
 ```sh
-git clone https://github.com/restot/agent-watch.git
-cd agent-watch
-chmod +x agent-watch
+curl -fsSL https://github.com/restot/agent-watch/releases/latest/download/agent-watch \
+  -o ~/.local/bin/agent-watch && chmod +x ~/.local/bin/agent-watch
 ```
 
-Symlink or copy to somewhere in your PATH:
-
-```sh
-# Option A: Claude Code bin directory
-mkdir -p ~/.claude/bin
-ln -sf "$(pwd)/agent-watch" ~/.claude/bin/agent-watch
-
-# Option B: Local bin
-ln -sf "$(pwd)/agent-watch" ~/.local/bin/agent-watch
-```
-
-Make sure the target directory is in your `PATH`.
+Make sure `~/.local/bin` is in your `PATH`.
 
 ## Usage
 
