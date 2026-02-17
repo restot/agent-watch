@@ -1,0 +1,1017 @@
+#!/usr/bin/env bash
+# Interactive sub-agent & session manager
+# Usage: agent-watch [command] [args]
+#   agent-watch              - Interactive selection + watch
+#   agent-watch list         - List all agents
+#   agent-watch watch [id]   - Watch specific agent
+#   agent-watch wait <ids>   - Wait for agents to complete
+#   agent-watch sessions     - Browse main agent sessions
+
+set -euo pipefail
+
+VERSION="1.0.0"
+PROJECTS_DIR="$HOME/.claude/projects"
+DEBUG=0
+OFFSET=0
+LIMIT=0
+
+# Home dir as it appears in Claude's project directory names (path separators become dashes)
+_HOME_PATTERN="${HOME//\//-}"
+_HOME_PATTERN="${_HOME_PATTERN#-}"  # strip leading dash
+
+# Detect stat flavor (BSD vs GNU)
+if stat -f "%N" /dev/null >/dev/null 2>&1; then
+    _STAT_CMD="bsd"
+else
+    _STAT_CMD="gnu"
+fi
+
+# Required dependencies
+command -v jq >/dev/null 2>&1 || { echo -e '\033[0;31mError:\033[0m Required: jq (https://jqlang.github.io/jq/)'; exit 1; }
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+DIM='\033[2m'
+
+die() {
+    echo -e "${RED}Error:${NC} $1"
+    exit 1
+}
+
+debug() {
+    [[ "$DEBUG" == "1" ]] && echo -e "${DIM}DEBUG: $1${NC}" || true
+}
+
+info() {
+    echo -e "${BLUE}→${NC} $1"
+}
+
+get_agent_files() {
+    # Return 20 most recent agents, excluding prompt suggestions
+    find "$PROJECTS_DIR" -path "*/subagents/agent-*.jsonl" -type f 2>/dev/null | \
+        grep -v "aprompt_suggestion" | \
+        xargs ls -t 2>/dev/null | head -20 || true
+}
+
+format_agent_line() {
+    local filepath="$1"
+    local agent_id project last_type msg_count mod_time status
+
+    agent_id=$(basename "$filepath" .jsonl | sed 's/agent-//')
+    project=$(echo "$filepath" | grep -oE '[^/]+/[^/]+/subagents' | cut -d'/' -f1 | sed "s/-${_HOME_PATTERN}-//" | sed 's/-/\//g')
+
+    # Get last activity type
+    last_type=$(tail -1 "$filepath" 2>/dev/null | jq -r '.type // "?"' 2>/dev/null)
+
+    # Get message count
+    msg_count=$(wc -l < "$filepath" 2>/dev/null | tr -d ' ')
+
+    # Get modification time
+    mod_time=$(stat -f "%Sm" -t "%H:%M" "$filepath" 2>/dev/null || stat -c "%y" "$filepath" 2>/dev/null | cut -d' ' -f2 | cut -d':' -f1,2)
+
+    # Check if still being written to (modified in last 30 seconds)
+    local now mod_epoch
+    now=$(date +%s)
+    mod_epoch=$(stat -f "%m" "$filepath" 2>/dev/null || stat -c "%Y" "$filepath" 2>/dev/null)
+    if [[ $((now - mod_epoch)) -lt 30 ]]; then
+        status="●"  # Active
+    else
+        status=" "  # Inactive
+    fi
+
+    printf "%s|%s|%s|%s|%s|%s|%s\n" "$status" "$agent_id" "$mod_time" "$last_type" "$msg_count" "$project" "$filepath"
+}
+
+# Print rich metadata header from a session/agent JSONL file.
+# Uses head/tail for speed, streams tokens with jq.
+_print_metadata_header() {
+    local filepath="$1"
+    local label="$2"  # displayed as-is, e.g. "Agent: abc123" or "Session: abc123 (full)"
+
+    # --- fast extracts: head for first user+assistant, tail for last entry ---
+    local version="" cwd="" branch="" start="" slug="" perm="" model=""
+    local end_time msg_count
+
+    while IFS= read -r line; do
+        case "$line" in
+            U:*) IFS='|' read -r version cwd branch start slug perm <<< "${line#U:}" ;;
+            A:*) model="${line#A:}" ;;
+        esac
+    done < <(head -15 "$filepath" | jq -r '
+        if .type == "user" then
+            "U:" + (.version // "?") + "|" + (.cwd // "?") + "|" + (.gitBranch // "?") + "|" + (.timestamp // "?") + "|" + (.slug // "") + "|" + (.permissionMode // "?")
+        elif .type == "assistant" then
+            "A:" + (.message.model // "?")
+        else empty end
+    ' 2>/dev/null)
+
+    end_time=$(tail -1 "$filepath" | jq -r '.timestamp // "?"' 2>/dev/null)
+    msg_count=$(wc -l < "$filepath" | tr -d ' ')
+
+    # --- token totals (streaming jq, no slurp) ---
+    local tok_in=0 tok_out=0 tok_cache_r=0 tok_cache_w=0
+    while IFS=$'\t' read -r ti to cr cw; do
+        ((tok_in += ti)) || true
+        ((tok_out += to)) || true
+        ((tok_cache_r += cr)) || true
+        ((tok_cache_w += cw)) || true
+    done < <(jq -r 'select(.type == "assistant") | .message.usage // empty |
+        [(.input_tokens // 0), (.output_tokens // 0), (.cache_read_input_tokens // 0), (.cache_creation_input_tokens // 0)] | @tsv
+    ' "$filepath" 2>/dev/null)
+
+    # --- format timestamps: "02/16 23:05" style ---
+    local start_fmt="$start" end_fmt="$end_time"
+    if [[ "$start" == *T* ]]; then
+        if [[ "$_STAT_CMD" == "bsd" ]]; then
+            start_fmt=$(date -jf "%Y-%m-%dT%H:%M:%S" "${start%%.*}" "+%m/%d %H:%M" 2>/dev/null || echo "$start")
+        else
+            start_fmt=$(date -d "${start%%.*}" "+%m/%d %H:%M" 2>/dev/null || echo "$start")
+        fi
+    fi
+    if [[ "$end_time" == *T* ]]; then
+        if [[ "$_STAT_CMD" == "bsd" ]]; then
+            end_fmt=$(date -jf "%Y-%m-%dT%H:%M:%S" "${end_time%%.*}" "+%m/%d %H:%M" 2>/dev/null || echo "$end_time")
+        else
+            end_fmt=$(date -d "${end_time%%.*}" "+%m/%d %H:%M" 2>/dev/null || echo "$end_time")
+        fi
+    fi
+
+    # --- format token counts: 1234 → 1.2k ---
+    _fmt_tokens() {
+        local n="$1"
+        if [[ $n -ge 1000000 ]]; then
+            awk "BEGIN { printf \"%.1fM\", $n / 1000000 }"
+        elif [[ $n -ge 1000 ]]; then
+            awk "BEGIN { printf \"%.1fk\", $n / 1000 }"
+        else
+            echo "$n"
+        fi
+    }
+
+    # --- print ---
+    # --- detect if sub-agent ---
+    local is_subagent=""
+    [[ "$filepath" == *"/subagents/"* ]] && is_subagent=1
+
+    echo -e "${CYAN}${label}${NC}"
+    echo -e "${DIM}Model:      ${NC}${model}"
+    echo -e "${DIM}Version:    ${NC}${version}"
+    echo -e "${DIM}Branch:     ${NC}${branch}"
+    echo -e "${DIM}Project:    ${NC}${cwd}"
+    [[ -n "$is_subagent" && -n "$slug" ]] && echo -e "${DIM}Slug:       ${NC}${slug}"
+    [[ -n "$perm" && "$perm" != "?" ]] && echo -e "${DIM}Permission: ${NC}${perm}"
+    echo -e "${DIM}Started:    ${NC}${start_fmt}"
+    echo -e "${DIM}Ended:      ${NC}${end_fmt}"
+    echo -e "${DIM}Messages:   ${NC}${msg_count}"
+    echo -e "${DIM}Tokens:     ${NC}$(_fmt_tokens $tok_in) in / $(_fmt_tokens $tok_out) out  ${DIM}(cache: $(_fmt_tokens $tok_cache_r) read, $(_fmt_tokens $tok_cache_w) created)${NC}"
+    echo -e "${DIM}───────────────────────────────────────${NC}"
+    echo ""
+}
+
+view_agent() {
+    local filepath="$1"
+    local agent_id
+    agent_id=$(basename "$filepath" .jsonl | sed 's/agent-//')
+
+    # Extract working dir from first file path in content (look for /app/, /spec/, etc.)
+    local workdir workdir_escaped match
+    match=$(grep -oE "${HOME}/[^\"\\\\]+/(app|spec|lib|src|test)/" "$filepath" 2>/dev/null | head -1 || true)
+    workdir=$(echo "$match" | sed 's|/app/$||;s|/spec/$||;s|/lib/$||;s|/src/$||;s|/test/$||' || true)
+    [[ -z "$workdir" ]] && workdir=""
+    workdir_escaped=$(printf '%s' "$workdir" | sed 's/[\/&]/\\&/g' || true)
+
+    # Prepare LIMIT marker for jq
+    local mark=""
+    [[ "$LIMIT" -gt 0 ]] && mark="yes"
+
+    # Inner render pipeline: offset input -> jq -> workdir strip -> color seds
+    _render() {
+        if [[ "$OFFSET" -gt 0 ]]; then
+            tail -n +"$((OFFSET + 1))" "$filepath"
+        else
+            cat "$filepath"
+        fi | \
+        jq -r --arg mark "$mark" '
+            (if $mark != "" then "@@MSG@@" else empty end),
+            if .type == "user" then
+                "@@USER@@ " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+            elif .type == "assistant" then
+                (.message.content // [])[] |
+                if .type == "tool_use" then
+                    (.input | tostring) as $inp |
+                    "@@TOOL@@ \(.name) @@TOOLEND@@ " + $inp[:200] + (if ($inp | length) > 200 then " [...]" else "" end)
+                elif .type == "text" then
+                    "@@ASST@@ " + .text
+                else empty end
+            elif .type == "tool_result" then
+                ((.content[0].text // .content // "") | tostring) as $res |
+                "@@RESULT@@ " + $res[:100] + (if ($res | length) > 100 then " [...]" else "" end)
+            else empty end
+        ' 2>/dev/null | \
+        if [[ -n "$workdir_escaped" ]]; then sed "s/$workdir_escaped\///g"; else cat; fi | \
+        sed $'s/@@USER@@/\033[0;32m[USER]\033[0m/g' | \
+        sed $'s/@@ASST@@/\033[0;35m[ASST]\033[0m/g' | \
+        sed $'s/@@TOOL@@ \\([^ ]*\\) @@TOOLEND@@/\033[0;34m[TOOL]\033[0m \033[0;33m\\1\033[0m/g' | \
+        sed $'s/@@RESULT@@/\033[2m[RESULT]/g'
+    }
+
+    # Determine label
+    local is_agent=""
+    [[ "$filepath" == *"/subagents/"* ]] && is_agent=1
+    local header_label
+    if [[ -n "$is_agent" ]]; then
+        header_label="Agent: $agent_id"
+    else
+        header_label="Session: $agent_id"
+    fi
+
+    if [[ "$LIMIT" -gt 0 ]]; then
+        # Direct output with token counting (no pager)
+        {
+            _print_metadata_header "$filepath" "$header_label"
+            _render
+        } | awk -v limit="$LIMIT" -v offset="$OFFSET" '
+            BEGIN { tokens = 0; msgs = 0; exceeded = 0; done = 0 }
+            /^@@MSG@@$/ {
+                if (exceeded) {
+                    printf "NEXT_OFFSET=%d\n", offset + msgs
+                    done = 1
+                    exit 0
+                }
+                msgs++
+                next
+            }
+            {
+                print
+                tokens += int(length / 4)
+                if (tokens >= limit) { exceeded = 1 }
+            }
+            END {
+                if (exceeded && !done) {
+                    printf "NEXT_OFFSET=%d\n", offset + msgs
+                }
+            }
+        ' || true
+    else
+        # Standard mode with pager
+        {
+            _print_metadata_header "$filepath" "$header_label"
+            _render
+        } | less -R
+    fi
+}
+
+view_agent_full() {
+    local filepath="$1"
+    local agent_id
+    agent_id=$(basename "$filepath" .jsonl | sed 's/agent-//')
+
+    # Extract working dir from first file path in content
+    local workdir workdir_escaped match
+    match=$(grep -oE "${HOME}/[^\"\\\\]+/(app|spec|lib|src|test)/" "$filepath" 2>/dev/null | head -1 || true)
+    workdir=$(echo "$match" | sed 's|/app/$||;s|/spec/$||;s|/lib/$||;s|/src/$||;s|/test/$||' || true)
+    [[ -z "$workdir" ]] && workdir=""
+    workdir_escaped=$(printf '%s' "$workdir" | sed 's/[\/&]/\\&/g' || true)
+
+    # Prepare LIMIT marker for jq
+    local mark=""
+    [[ "$LIMIT" -gt 0 ]] && mark="yes"
+
+    # Inner render pipeline: offset input -> jq (full, no truncation) -> workdir strip -> color seds
+    _render_full() {
+        if [[ "$OFFSET" -gt 0 ]]; then
+            tail -n +"$((OFFSET + 1))" "$filepath"
+        else
+            cat "$filepath"
+        fi | \
+        jq -r --arg mark "$mark" '
+            (if $mark != "" then "@@MSG@@" else empty end),
+            if .type == "user" then
+                "@@USER@@ " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+            elif .type == "assistant" then
+                (.message.content // [])[] |
+                if .type == "tool_use" then
+                    "@@TOOL@@ \(.name) @@TOOLEND@@", (.input | tostring)
+                elif .type == "text" then
+                    "@@ASST@@ " + .text
+                else empty end
+            elif .type == "tool_result" then
+                "@@RESULT@@", ((.content[0].text // .content // "") | tostring)
+            else empty end
+        ' 2>/dev/null | \
+        if [[ -n "$workdir_escaped" ]]; then sed "s/$workdir_escaped\///g"; else cat; fi | \
+        sed $'s/@@USER@@/\033[0;32m[USER]\033[0m/g' | \
+        sed $'s/@@ASST@@/\033[0;35m[ASST]\033[0m/g' | \
+        sed $'s/@@TOOL@@ \\([^ ]*\\) @@TOOLEND@@/\033[0;34m[TOOL]\033[0m \033[0;33m\\1\033[0m/g' | \
+        sed $'s/@@RESULT@@/\033[2m[RESULT]\033[0m/g'
+    }
+
+    # Determine label
+    local is_agent=""
+    [[ "$filepath" == *"/subagents/"* ]] && is_agent=1
+    local header_label
+    if [[ -n "$is_agent" ]]; then
+        header_label="Agent: $agent_id (full)"
+    else
+        header_label="Session: $agent_id (full)"
+    fi
+
+    if [[ "$LIMIT" -gt 0 ]]; then
+        # Direct output with token counting (no pager)
+        {
+            _print_metadata_header "$filepath" "$header_label"
+            _render_full
+        } | awk -v limit="$LIMIT" -v offset="$OFFSET" '
+            BEGIN { tokens = 0; msgs = 0; exceeded = 0; done = 0 }
+            /^@@MSG@@$/ {
+                if (exceeded) {
+                    printf "NEXT_OFFSET=%d\n", offset + msgs
+                    done = 1
+                    exit 0
+                }
+                msgs++
+                next
+            }
+            {
+                print
+                tokens += int(length / 4)
+                if (tokens >= limit) { exceeded = 1 }
+            }
+            END {
+                if (exceeded && !done) {
+                    printf "NEXT_OFFSET=%d\n", offset + msgs
+                }
+            }
+        ' || true
+    else
+        # Standard mode with pager
+        {
+            _print_metadata_header "$filepath" "$header_label"
+            _render_full
+        } | less -R
+    fi
+}
+
+watch_agent() {
+    local filepath="$1"
+    debug " entered watch_agent with [$filepath]"
+
+    local agent_id
+    agent_id=$(basename "$filepath" .jsonl | sed 's/agent-//')
+
+    # Extract working dir from first file path in content (look for /app/, /spec/, etc.)
+    local workdir workdir_escaped match
+    match=$(grep -oE "${HOME}/[^\"\\\\]+/(app|spec|lib|src|test)/" "$filepath" 2>/dev/null | head -1 || true)
+    workdir=$(echo "$match" | sed 's|/app/$||;s|/spec/$||;s|/lib/$||;s|/src/$||;s|/test/$||' || true)
+    [[ -z "$workdir" ]] && workdir=""
+    workdir_escaped=$(printf '%s' "$workdir" | sed 's/[\/&]/\\&/g' || true)
+
+    local is_agent=""
+    [[ "$filepath" == *"/subagents/"* ]] && is_agent=1
+    local header_label
+    if [[ -n "$is_agent" ]]; then
+        header_label="Watching Agent: $agent_id"
+    else
+        header_label="Watching Session: $agent_id"
+    fi
+
+    clear
+    _print_metadata_header "$filepath" "$header_label"
+    echo -e "${DIM}Press Ctrl+C to stop${NC}"
+
+    debug " about to start tail -f"
+    tail -n +1 -f "$filepath" 2>&1 | jq --unbuffered -r '
+        if .type == "user" then
+            "@@USER@@ " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+        elif .type == "assistant" then
+            (.message.content // [])[] |
+            if .type == "tool_use" then
+                "@@TOOL@@ \(.name) @@TOOLEND@@", (.input | tostring)
+            elif .type == "text" then
+                "@@ASST@@ " + .text
+            else empty end
+        elif .type == "tool_result" then
+            "@@RESULT@@", ((.content[0].text // .content // "") | tostring)
+        else empty end
+    ' 2>/dev/null | \
+    { if [[ -n "$workdir_escaped" ]]; then sed -u "s/$workdir_escaped\///g"; else cat; fi; } | \
+    sed -u $'s/@@USER@@/\033[0;32m[USER]\033[0m/g' | \
+    sed -u $'s/@@ASST@@/\033[0;35m[ASST]\033[0m/g' | \
+    sed -u $'s/@@TOOL@@ \\([^ ]*\\) @@TOOLEND@@/\033[0;34m[TOOL]\033[0m \033[0;33m\\1\033[0m/g' | \
+    sed -u $'s/@@RESULT@@/\033[2m[RESULT]\033[0m/g'
+}
+
+get_session_files() {
+    # Return all main session JSONL files (not sub-agents), sorted by mtime
+    find "$PROJECTS_DIR" -maxdepth 2 -name "*.jsonl" -type f 2>/dev/null | \
+        grep -vE '/subagents/' | \
+        xargs ls -t 2>/dev/null || true
+}
+
+# Batch-preload session metadata into associative arrays.
+# Call once before loops that need session info. Populates:
+#   _PROMPT[sessionId]  — first prompt (truncated, cleaned)
+#   _STAT[filepath]     — "mm/dd HH:MM epoch"
+#   _WC[filepath]       — message count
+_preload_session_data() {
+    local files_list="$1"
+
+    # Batch prompts: single jq per index file
+    declare -gA _PROMPT
+    while IFS=$'\t' read -r sid prompt; do
+        [[ -n "$sid" ]] && _PROMPT["$sid"]="$prompt"
+    done < <(
+        find "$PROJECTS_DIR" -maxdepth 2 -name "sessions-index.json" -type f 2>/dev/null | \
+        xargs jq -r '.entries[] | [.sessionId, (.firstPrompt // "" | gsub("[\\n\\t]"; " ") | .[:60])] | @tsv' 2>/dev/null
+    )
+
+    # Batch stat: one call for all files → "filepath mm/dd HH:MM epoch"
+    declare -gA _STAT
+    while IFS= read -r line; do
+        local fpath="${line%%.jsonl *}.jsonl"
+        local rest="${line#*.jsonl }"
+        _STAT["$fpath"]="$rest"
+    done < <(
+        if [[ "$_STAT_CMD" == "bsd" ]]; then
+            echo "$files_list" | xargs stat -f "%N %Sm %m" -t "%m/%d %H:%M" 2>/dev/null
+        else
+            echo "$files_list" | xargs stat --printf="%n %y %Y\n" 2>/dev/null | \
+                awk '{ split($2,d,"-"); split($3,t,":"); printf "%s %s/%s %s:%s %s\n", $1, d[2], d[3], t[1], t[2], $4 }'
+        fi
+    )
+
+    # Batch wc -l: one call for all files
+    declare -gA _WC
+    local _wc_n _wc_f
+    while read -r _wc_n _wc_f; do
+        [[ "$_wc_f" == "total" ]] && continue
+        [[ -n "$_wc_f" ]] && _WC["$_wc_f"]="${_wc_n## }"
+    done < <(echo "$files_list" | xargs wc -l 2>/dev/null)
+}
+
+cmd_sessions() {
+    local input="${1:-}"
+
+    # If a session ID is provided, view it directly
+    if [[ -n "$input" ]]; then
+        local filepath
+        if [[ -f "$input" ]]; then
+            filepath="$input"
+        else
+            filepath=$(find "$PROJECTS_DIR" -maxdepth 2 -name "${input}*.jsonl" -type f 2>/dev/null | grep -v '/subagents/' | head -1)
+            if [[ -z "$filepath" ]]; then
+                die "Session $input not found"
+            fi
+        fi
+        view_agent "$filepath"
+        return
+    fi
+
+    command -v fzf >/dev/null 2>&1 || die "Required for interactive mode: fzf (https://github.com/junegunn/fzf)"
+
+    local files
+    files=$(get_session_files)
+
+    if [[ -z "$files" ]]; then
+        die "No sessions found"
+    fi
+
+    # Create temp dir for preview cache
+    local cache_dir
+    cache_dir=$(mktemp -d)
+    trap "rm -rf '$cache_dir'" EXIT
+
+    # Batch preload all metadata
+    _preload_session_data "$files"
+    local now
+    now=$(date +%s)
+
+    local fzf_out key selection filepath
+    fzf_out=$(while IFS= read -r filepath; do
+        [[ -z "$filepath" ]] && continue
+
+        local session_id="${filepath##*/}"
+        session_id="${session_id%.jsonl}"
+        local short_id="${session_id:0:8}"
+        local dir="${filepath%/*}"
+        local project_dir="${dir##*/}"
+
+        local first_prompt="${_PROMPT[$session_id]:-}"
+        local msg_count="${_WC[$filepath]:-0}"
+        msg_count="${msg_count## }"
+
+        local stat_data="${_STAT[$filepath]:-}"
+        local mod_date mod_time mod_epoch st
+        if [[ -n "$stat_data" ]]; then
+            mod_date="${stat_data%% *}"
+            local rest="${stat_data#* }"
+            mod_time="${rest%% *}"
+            mod_epoch="${rest#* }"
+        else
+            mod_date="??/??"; mod_time="??:??"; mod_epoch=0
+        fi
+        [[ $((now - mod_epoch)) -lt 30 ]] && st="●" || st=" "
+
+        local project_name="$project_dir"
+        project_name="${project_name//-${_HOME_PATTERN}-/}"
+        project_name="${project_name//-//}"
+        project_name="${project_name:0:30}"
+
+        # Write preview to cache file (rich metadata + first exchanges)
+        local preview_file="$cache_dir/$short_id"
+        {
+            _print_metadata_header "$filepath" "Session: $session_id"
+            head -20 "$filepath" 2>/dev/null | jq -r '
+                if .type == "user" then
+                    "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)[:200]
+                elif .type == "assistant" then
+                    (.message.content // [])[] |
+                    if .type == "text" then
+                        "\u001b[0;35m[ASST]\u001b[0m " + .text[:200]
+                    else empty end
+                else empty end
+            ' 2>/dev/null
+        } > "$preview_file"
+
+        printf "%-1s %-8s  %-11s  %4s  %-30s  %-60s\t%s\t%s\n" \
+            "$st" "$short_id" "$mod_date $mod_time" "$msg_count" "$project_name" "$first_prompt" "$filepath" "$preview_file"
+    done <<< "$files" | \
+        fzf --ansi \
+            --delimiter='\t' \
+            --header="enter=watch | alt-w=view | alt-f=full" \
+            --preview="cat {3}" \
+            --preview-window=right:50% \
+            --expect=alt-w,alt-f \
+            --with-nth=1) || exit 0
+
+    key=$(echo "$fzf_out" | head -1)
+    selection=$(echo "$fzf_out" | sed -n '2p')
+
+    [[ -z "$selection" ]] && exit 0
+
+    filepath=$(echo "$selection" | cut -d$'\t' -f2)
+
+    [[ ! -f "$filepath" ]] && die "Session file not found: $filepath"
+
+    # Clean up cache before running view commands
+    rm -rf "$cache_dir"
+    trap - EXIT
+
+    if [[ "$key" == "alt-w" ]]; then
+        view_agent "$filepath"
+    elif [[ "$key" == "alt-f" ]]; then
+        view_agent_full "$filepath"
+    else
+        watch_agent "$filepath" < /dev/tty
+    fi
+}
+
+cmd_list() {
+    local count="${1:-20}"
+
+    echo -e "${BLUE}Recent sub-agents (newest first):${NC}"
+    echo ""
+    printf "%-3s %-10s %-6s %-12s %-6s %s\n" "" "AGENT" "TIME" "LAST" "MSGS" "PROJECT"
+    printf "%-3s %-10s %-6s %-12s %-6s %s\n" "─" "──────────" "─────" "──────────" "────" "───────"
+
+    get_agent_files | head -"$count" | while read -r filepath; do
+        [[ -z "$filepath" ]] && continue
+        local line
+        line=$(format_agent_line "$filepath")
+        local status agent_id mod_time last_type msg_count project
+        IFS='|' read -r status agent_id mod_time last_type msg_count project _ <<< "$line"
+
+        if [[ "$status" == "●" ]]; then
+            printf "${GREEN}%-3s${NC} %-10s %-6s %-12s %-6s %s\n" "$status" "$agent_id" "$mod_time" "[$last_type]" "$msg_count" "$project"
+        else
+            printf "%-3s %-10s %-6s %-12s %-6s %s\n" "$status" "$agent_id" "$mod_time" "[$last_type]" "$msg_count" "$project"
+        fi
+    done
+}
+
+cmd_list_sessions() {
+    local count=0
+    local project_filter=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -p|--project) project_filter="$2"; shift 2 ;;
+            *) count="$1"; shift ;;
+        esac
+    done
+
+    if [[ -n "$project_filter" ]]; then
+        echo -e "${BLUE}Sessions for project matching '${project_filter}' (newest first):${NC}"
+    else
+        echo -e "${BLUE}Recent sessions (newest first):${NC}"
+    fi
+    echo ""
+    printf "%-3s %-10s %-13s %-6s %-30s  %s\n" "" "SESSION" "DATE" "MSGS" "PROJECT" "PROMPT"
+    printf "%-3s %-10s %-13s %-6s %-30s  %s\n" "─" "────────" "─────────────" "────" "──────────────────────────────" "──────"
+
+    local files
+    files=$(get_session_files)
+
+    if [[ -z "$files" ]]; then
+        echo "  (no sessions found)"
+        return
+    fi
+
+    # Batch preload all metadata (~6 subprocesses instead of ~20/session)
+    _preload_session_data "$files"
+    local now
+    now=$(date +%s)
+
+    # Pure-bash formatting loop (zero subprocesses per iteration)
+    local printed=0
+    while IFS= read -r filepath; do
+        [[ -z "$filepath" ]] && continue
+        [[ $count -gt 0 && $printed -ge $count ]] && break
+
+        local session_id="${filepath##*/}"
+        session_id="${session_id%.jsonl}"
+        local short_id="${session_id:0:8}"
+        local dir="${filepath%/*}"
+        local project_dir="${dir##*/}"
+
+        local first_prompt="${_PROMPT[$session_id]:-}"
+        local msg_count="${_WC[$filepath]:-0}"
+        msg_count="${msg_count## }"
+
+        local stat_data="${_STAT[$filepath]:-}"
+        local mod_date mod_time mod_epoch
+        if [[ -n "$stat_data" ]]; then
+            mod_date="${stat_data%% *}"
+            local rest="${stat_data#* }"
+            mod_time="${rest%% *}"
+            mod_epoch="${rest#* }"
+        else
+            mod_date="??/??"; mod_time="??:??"; mod_epoch=0
+        fi
+
+        local status=" "
+        [[ $((now - mod_epoch)) -lt 30 ]] && status="●"
+
+        local project_name="$project_dir"
+        project_name="${project_name//-${_HOME_PATTERN}-/}"
+        project_name="${project_name//-//}"
+        project_name="${project_name:0:30}"
+
+        # Filter by project (pure bash, no grep subprocess)
+        if [[ -n "$project_filter" ]]; then
+            [[ "${project_name,,}" != *"${project_filter,,}"* ]] && continue
+        fi
+
+        local datetime="$mod_date $mod_time"
+        if [[ "$status" == "●" ]]; then
+            printf "${GREEN}%-3s${NC} %-10s %-13s %4s  %-30s  %s\n" \
+                "$status" "$short_id" "$datetime" "$msg_count" "$project_name" "$first_prompt"
+        else
+            printf "%-3s %-10s %-13s %4s  %-30s  %s\n" \
+                "$status" "$short_id" "$datetime" "$msg_count" "$project_name" "$first_prompt"
+        fi
+        ((printed++)) || true
+    done <<< "$files"
+}
+
+cmd_interactive() {
+    command -v fzf >/dev/null 2>&1 || die "Required for interactive mode: fzf (https://github.com/junegunn/fzf)"
+
+    local files
+    files=$(get_agent_files)
+
+    if [[ -z "$files" ]]; then
+        die "No sub-agents found"
+    fi
+
+    # Create temp dir for preview cache
+    local cache_dir
+    cache_dir=$(mktemp -d)
+    trap "rm -rf '$cache_dir'" EXIT
+
+    # Build list with preview files
+    local fzf_out key selection filepath
+    fzf_out=$(echo "$files" | while read -r filepath; do
+        [[ -z "$filepath" ]] && continue
+
+        local agent_id project last_type msg_count mod_time st
+        agent_id=$(basename "$filepath" .jsonl | sed 's/agent-//')
+        project=$(echo "$filepath" | grep -oE '[^/]+/[^/]+/subagents' | cut -d'/' -f1 | sed "s/-${_HOME_PATTERN}-//" | sed 's/-/\//g' | cut -c1-40)
+        last_type=$(tail -1 "$filepath" 2>/dev/null | jq -r '.type // "?"' 2>/dev/null)
+        msg_count=$(wc -l < "$filepath" 2>/dev/null | tr -d ' ')
+        mod_time=$(stat -f "%Sm" -t "%H:%M" "$filepath" 2>/dev/null || stat -c "%y" "$filepath" 2>/dev/null | cut -d' ' -f2 | cut -d':' -f1,2)
+
+        local now mod_epoch
+        now=$(date +%s)
+        mod_epoch=$(stat -f "%m" "$filepath" 2>/dev/null || stat -c "%Y" "$filepath" 2>/dev/null)
+        [[ $((now - mod_epoch)) -lt 30 ]] && st="●" || st=" "
+
+        # Write preview to cache file (rich metadata + first prompt)
+        local preview_file="$cache_dir/$agent_id"
+        {
+            _print_metadata_header "$filepath" "Agent: $agent_id"
+            head -20 "$filepath" 2>/dev/null | jq -r '
+                if .type == "user" then
+                    "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)[:200]
+                elif .type == "assistant" then
+                    (.message.content // [])[] |
+                    if .type == "text" then
+                        "\u001b[0;35m[ASST]\u001b[0m " + .text[:200]
+                    else empty end
+                else empty end
+            ' 2>/dev/null
+        } > "$preview_file"
+
+        # Formatted display line + filepath + preview file
+        printf "%-1s %-9s %-5s %-10s %4s  %-40s\t%s\t%s\n" "$st" "$agent_id" "$mod_time" "$last_type" "$msg_count" "$project" "$filepath" "$preview_file"
+    done | \
+        fzf --ansi \
+            --delimiter='\t' \
+            --header="enter=watch | alt-w=view | alt-f=full" \
+            --preview="cat {3}" \
+            --preview-window=right:50% \
+            --expect=alt-w,alt-f \
+            --with-nth=1) || exit 0
+
+    key=$(echo "$fzf_out" | head -1)
+    selection=$(echo "$fzf_out" | sed -n '2p')
+
+    debug " key=[$key]"
+    debug " selection=[$selection]"
+
+    [[ -z "$selection" ]] && exit 0
+
+    filepath=$(echo "$selection" | cut -d$'\t' -f2)
+    debug " filepath=[$filepath]"
+
+    [[ ! -f "$filepath" ]] && die "Agent file not found: $filepath"
+
+    # Clean up cache before running agent commands
+    rm -rf "$cache_dir"
+    trap - EXIT
+
+    if [[ "$key" == "alt-w" ]]; then
+        view_agent "$filepath"
+    elif [[ "$key" == "alt-f" ]]; then
+        view_agent_full "$filepath"
+    else
+        debug " calling watch_agent"
+        watch_agent "$filepath" < /dev/tty
+    fi
+}
+
+cmd_view() {
+    local input="$1"
+    local filepath
+
+    if [[ -z "$input" ]]; then
+        # View most recent
+        filepath=$(get_agent_files | head -1)
+        if [[ -z "$filepath" ]]; then
+            die "No sub-agents found"
+        fi
+    elif [[ -f "$input" ]]; then
+        # Direct filepath
+        filepath="$input"
+    else
+        # Find by ID
+        filepath=$(find "$PROJECTS_DIR" -name "agent-${input}*.jsonl" -type f 2>/dev/null | head -1)
+        if [[ -z "$filepath" ]]; then
+            die "Agent $input not found"
+        fi
+    fi
+
+    view_agent "$filepath"
+}
+
+cmd_watch() {
+    local input="$1"
+    local filepath
+
+    if [[ -z "$input" ]]; then
+        # Watch most recent
+        filepath=$(get_agent_files | head -1)
+        if [[ -z "$filepath" ]]; then
+            die "No sub-agents found"
+        fi
+    elif [[ -f "$input" ]]; then
+        # Direct filepath
+        filepath="$input"
+    else
+        # Find by ID
+        filepath=$(find "$PROJECTS_DIR" -name "agent-${input}*.jsonl" -type f 2>/dev/null | head -1)
+        if [[ -z "$filepath" ]]; then
+            die "Agent $input not found"
+        fi
+    fi
+
+    watch_agent "$filepath"
+}
+
+agent_pid_alive() {
+    # Check if the recorded PID for this agent is still running
+    local agent_id="$1"
+    local pid_file="$HOME/.claude/.agent-pids/$agent_id"
+
+    if [[ ! -f "$pid_file" ]]; then
+        return 1  # no PID file = not running (or pre-hook era agent)
+    fi
+
+    local pid
+    pid=$(cat "$pid_file" 2>/dev/null)
+    if [[ -z "$pid" ]]; then
+        return 1
+    fi
+
+    kill -0 "$pid" 2>/dev/null
+}
+
+cmd_wait() {
+    local agent_ids=("$@")
+    local log_file="$HOME/.claude/subagent-tokens.log"
+    local stale_threshold=300  # 5 min fallback for agents without PID files
+
+    if [[ ${#agent_ids[@]} -eq 0 ]]; then
+        die "Usage: agent-watch wait <agent_id> [agent_id...]"
+    fi
+
+    echo "Waiting for ${#agent_ids[@]} agent(s): ${agent_ids[*]}"
+
+    # Ensure log file exists
+    touch "$log_file"
+
+    # Check which agents are already done (in existing log)
+    local pending=()
+    for id in "${agent_ids[@]}"; do
+        if ! grep -q "($id)" "$log_file" 2>/dev/null; then
+            pending+=("$id")
+        fi
+    done
+
+    if [[ ${#pending[@]} -eq 0 ]]; then
+        echo "All agents completed."
+        return 0
+    fi
+
+    echo "Pending: ${pending[*]}"
+
+    # Poll for completions
+    while true; do
+        local remaining=0
+        local now
+        now=$(date +%s)
+
+        for id in "${pending[@]}"; do
+            # 1. Token log — hook-based completion signal
+            if grep -q "($id)" "$log_file" 2>/dev/null; then
+                continue
+            fi
+
+            # 2. Process check — is the claude process still alive?
+            if agent_pid_alive "$id"; then
+                ((remaining++)) || true
+                continue
+            fi
+
+            # 3. No PID file (pre-hook agent or PID file already cleaned up)
+            #    Fall back to JSONL staleness check
+            local pid_file="$HOME/.claude/.agent-pids/$id"
+            if [[ ! -f "$pid_file" ]]; then
+                local agent_file
+                agent_file=$(find "$PROJECTS_DIR" -name "agent-${id}*.jsonl" -type f 2>/dev/null | head -1)
+                if [[ -z "$agent_file" ]]; then
+                    continue  # no file at all
+                fi
+                local mod_epoch stale_secs
+                mod_epoch=$(stat -f "%m" "$agent_file" 2>/dev/null || stat -c "%Y" "$agent_file" 2>/dev/null)
+                stale_secs=$((now - mod_epoch))
+                if [[ $stale_secs -gt $stale_threshold ]]; then
+                    echo "Agent $id: no PID file, no activity for ${stale_secs}s, presuming dead."
+                    continue
+                fi
+                # Recently modified but no PID file — could be in-flight, keep waiting
+                ((remaining++)) || true
+                continue
+            fi
+
+            # PID file exists but process is dead — agent crashed
+            echo "Agent $id: process exited (hook may have failed)."
+            rm -f "$pid_file"
+        done
+
+        if [[ $remaining -eq 0 ]]; then
+            echo "All agents completed."
+            break
+        fi
+
+        sleep 2
+    done
+
+    return 0
+}
+
+show_usage() {
+    cat <<EOF
+Usage: agent-watch [flags] [command] [args]
+
+Non-interactive commands (safe for agents):
+  list [count]        List recent sub-agents (default: 20)
+  list-sessions [n]   List all sessions (or last n)
+    -p, --project <name>  Filter by project (case-insensitive partial match)
+  view [id]           View agent transcript (most recent if no id)
+  session <id>        View a specific session
+  <id>                Auto-detect: view agent or session by ID
+  wait <id> [id...]   Block until agent(s) complete
+
+Interactive commands (require TTY):
+  (none)              fzf selection of sub-agents
+  sessions [id]       fzf browser for sessions (or view specific session by ID)
+  watch [id]          Live tail of agent output
+
+All views display a metadata header:
+  Model, Version, Branch, Project, Started/Ended, Messages, Tokens
+  Sub-agents also show Slug; Permission shown when available.
+
+Pagination (for large sessions/agents):
+  --limit N           Token budget (chars/4); prints NEXT_OFFSET=M when exceeded
+  --offset N          Skip first N messages (combine with --limit to paginate)
+
+Other flags:
+  --debug             Show debug output
+  --help              Show this help message
+  --version           Show version number
+
+Examples:
+  agent-watch                     # Interactive agent selection (fzf)
+  agent-watch list                # List recent agents
+  agent-watch list-sessions       # List all sessions
+  agent-watch list-sessions 10    # List 10 most recent sessions
+  agent-watch list-sessions -p oc # Filter sessions by project name
+  agent-watch view                # View most recent agent transcript
+  agent-watch abc123              # Auto-detect: view agent or session by ID
+  agent-watch wait abc123 def456  # Wait for multiple agents to complete
+  agent-watch sessions            # Browse sessions interactively (fzf)
+  agent-watch watch               # Live tail most recent agent
+  agent-watch abc123 --limit 5000               # Token-limited view
+  agent-watch abc123 --offset 50 --limit 5000   # Paginate from message 50
+EOF
+}
+
+# Parse all flags from any position, collect positional args
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --debug)   DEBUG=1; shift ;;
+        --help)    show_usage; exit 0 ;;
+        --version) echo "agent-watch $VERSION"; exit 0 ;;
+        --offset)  OFFSET="${2:?--offset requires a value}"; shift 2 ;;
+        --limit)   LIMIT="${2:?--limit requires a value}"; shift 2 ;;
+        *)         ARGS+=("$1"); shift ;;
+    esac
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+
+case "${1:-}" in
+    session|sessions)
+        cmd_sessions "${2:-}"
+        ;;
+    list-sessions)
+        shift
+        cmd_list_sessions "$@"
+        ;;
+    list)
+        cmd_list "${2:-20}"
+        ;;
+    view)
+        cmd_view "${2:-}"
+        ;;
+    watch)
+        cmd_watch "${2:-}"
+        ;;
+    wait)
+        shift
+        cmd_wait "$@"
+        ;;
+    -h|--help|help)
+        show_usage
+        ;;
+    "")
+        cmd_interactive
+        ;;
+    *)
+        # Try as agent ID first, then session ID
+        if find "$PROJECTS_DIR" -name "agent-${1}*.jsonl" -type f 2>/dev/null | grep -q .; then
+            cmd_view "$1"
+        elif find "$PROJECTS_DIR" -maxdepth 2 -name "${1}*.jsonl" -type f 2>/dev/null | grep -v '/subagents/' | grep -q .; then
+            cmd_sessions "$1"
+        else
+            die "No agent or session found matching '$1'"
+        fi
+        ;;
+esac
