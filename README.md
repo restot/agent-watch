@@ -29,7 +29,19 @@ curl -fsSL https://github.com/restot/agent-watch/releases/latest/download/agent-
   -o ~/.local/bin/agent-watch && chmod +x ~/.local/bin/agent-watch
 ```
 
-Make sure `~/.local/bin` is in your `PATH`.
+Verify it's in your `PATH`:
+
+```sh
+which agent-watch
+```
+
+If not found:
+
+```sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.$(basename "$SHELL")rc
+```
+
+Restart your shell or run `exec $SHELL` to apply.
 
 ## Usage
 
