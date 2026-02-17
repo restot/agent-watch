@@ -2,16 +2,37 @@
 
 CLI tool for monitoring and browsing Claude Code sub-agent and session transcripts.
 
-## What it does
+## Core Features
 
-- Browse and search Claude Code session history and sub-agent transcripts
-- Rich metadata headers showing model, version, branch, project, timestamps, message count, token usage
-- Interactive fzf-based selection with previews
-- Non-interactive commands safe for use by Claude Code agents themselves
-- Live tailing of active sub-agents
-- Pagination with token budgets for large sessions (`--limit`/`--offset`)
-- Auto-detection of agent vs session IDs
-- Wait for sub-agent completion -- block until agents finish using PID tracking, token logs, and JSONL staleness detection
+### Session & Agent Browsing
+
+View and search through Claude Code session history and sub-agent transcripts. All views display rich metadata headers showing model, version, branch, project, timestamps, message count, and token usage breakdown. Auto-detects whether an ID is a session or agent.
+
+### Agent Orchestration (`wait`)
+
+Block until one or more sub-agents complete. Essential for parallel agent workflows. Uses up to three detection methods:
+
+1. **Token log** -- instant detection via hook-based completion entries
+2. **PID liveness** -- checks if the Claude process is still running via `kill -0`
+3. **JSONL staleness** -- fallback: no activity for 5 minutes = presumed complete
+
+**The PID hook is required for robust `wait` behavior.** Without it, `wait` falls back to JSONL staleness, which will incorrectly presume an agent is dead if it's alive but idle for >5 minutes (e.g. long tool execution, slow model response). See the [setup guide](https://github.com/restot/agent-watch/wiki/Token-Log-Setup) to configure hooks.
+
+### Interactive Mode
+
+fzf-based selection with preview panels showing metadata and first exchanges. Browse sessions or agents, then view, watch live, or open full transcripts.
+
+### Pagination
+
+Navigate large sessions without loading everything into memory. `--limit` sets a token budget (chars/4), `--offset` skips messages. Output includes `NEXT_OFFSET=M` for continuation.
+
+### Agent-Safe Commands
+
+Non-interactive commands (`list`, `list-sessions`, `view`, `session`, `wait`) are safe for use by Claude Code agents themselves -- no TTY required.
+
+### Live Tailing
+
+Stream agent output in real-time with colorized role markers (`[USER]`, `[ASST]`, `[TOOL]`, `[RESULT]`).
 
 ## Installation
 
@@ -54,7 +75,7 @@ curl -fsSL https://raw.githubusercontent.com/restot/agent-watch/main/CLAUDE.md >
 ## Usage
 
 ```
-Usage: agent-watch [flags] [command] [args]
+Usage: agent-watch [command] [args] [flags]
 
 Non-interactive commands (safe for agents):
   list [count]        List recent sub-agents (default: 20)
@@ -83,9 +104,14 @@ Other flags:
   --debug             Show debug output
   --help              Show this help message
   --version           Show version
+
+Environment:
+  AGENT_WATCH_STALE_TIMEOUT   Staleness threshold in seconds for wait fallback (default: 300)
 ```
 
 ## Examples
+
+### Non-interactive (safe for agents)
 
 List the 10 most recent sub-agents:
 
@@ -125,24 +151,18 @@ Wait for sub-agents to finish before continuing:
 agent-watch wait abc123 def456
 ```
 
-The `wait` command is a core feature for orchestrating parallel sub-agent workflows. It blocks until all specified agents complete, using three detection methods in order:
+### Interactive (require TTY)
 
-1. **Token log** -- checks `~/.claude/subagent-tokens.log` for hook-based completion entries
-2. **PID liveness** -- verifies the Claude process is still running via PID files in `~/.claude/.agent-pids/`
-3. **JSONL staleness** -- falls back to checking if the agent's JSONL file hasn't been modified for 5 minutes (for agents without PID tracking)
-
-This enables patterns like launching multiple agents in parallel, then waiting for all of them before proceeding:
-
-```sh
-# In a Claude Code session, launch agents then:
-agent-watch wait abc123 def456 ghi789
-# Continues only after all three complete
-```
-
-Browse sessions interactively with fzf:
+Browse sessions with fzf:
 
 ```sh
 agent-watch sessions
+```
+
+Browse sub-agents with fzf:
+
+```sh
+agent-watch
 ```
 
 Live tail an active sub-agent:
@@ -153,10 +173,41 @@ agent-watch watch
 
 ## How it works
 
+<details>
+<summary>Architecture and internals</summary>
+
+### File structure
+
+```
+~/.claude/projects/
+  <project>/
+    <session-id>.jsonl          <-- main session transcripts
+    sessions-index.json         <-- session metadata (prompts, dates)
+    subagents/
+      agent-<id>.jsonl          <-- sub-agent transcripts
+
+~/.claude/.agent-pids/          <-- PID files (optional, via hooks)
+~/.claude/subagent-tokens.log   <-- token log (optional, via hooks)
+```
+
+### Flow
+
+![agent-watch flow](agent-watch-v1.0.1.excalidraw.png)
+
+### Details
+
 agent-watch reads Claude Code's JSONL session and agent files from `~/.claude/projects/`. It parses metadata from the first few entries in each file (model, version, branch, timestamps) and aggregates token usage across all assistant entries.
 
 JSON parsing is handled by jq. Interactive selection uses fzf with preview windows that show session metadata and recent messages. Output is colorized with role-based markers (`[USER]`, `[ASST]`, `[TOOL]`, `[RESULT]`) for readability.
 
+</details>
+
+
+## Wiki
+
+See the [wiki](https://github.com/restot/agent-watch/wiki) for advanced setup guides:
+
+- [Token Log & PID Tracking](https://github.com/restot/agent-watch/wiki/Token-Log-Setup) -- Claude Code hooks for faster `wait` detection and token usage logging
 
 ## Contributing
 
