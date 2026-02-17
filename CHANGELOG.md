@@ -5,7 +5,7 @@
 - **Rich metadata in fzf previews** -- interactive session and agent selection now shows full metadata header (model, version, tokens, timestamps) in the preview panel
 - **Self-update** -- `agent-watch update` downloads the latest release in place
 - **Version check** -- `agent-watch version` / `-v` / `--version` shows current version and checks for updates
-- **CLAUDE.md** -- added project memory file for Claude Code agents working on this repo
+- **CLAUDE.md** -- copy-paste reference to teach your Claude Code agents how to use agent-watch
 - **README improvements** -- curl-based install from GitHub releases, detailed `wait` command documentation, contributing guide
 
 ## 1.0.0
