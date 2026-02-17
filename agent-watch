@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.4"
+VERSION="1.0.5"
 PROJECTS_DIR="$HOME/.claude/projects"
 DEBUG=0
 OFFSET=0
@@ -689,12 +689,13 @@ cmd_list_sessions() {
         local project_name="$project_dir"
         project_name="${project_name//-${_HOME_PATTERN}-/}"
         project_name="${project_name//-//}"
-        project_name="${project_name:0:30}"
 
-        # Filter by project (pure bash, no grep subprocess)
+        # Filter by project BEFORE truncation (pure bash, no grep subprocess)
         if [[ -n "$project_filter" ]]; then
             [[ "${project_name,,}" != *"${project_filter,,}"* ]] && continue
         fi
+
+        project_name="${project_name:0:30}"
 
         local datetime="$mod_date $mod_time"
         if [[ "$status" == "●" ]]; then
