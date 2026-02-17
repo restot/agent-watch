@@ -43,6 +43,14 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.$(basename "$SHELL")rc
 
 Restart your shell or run `exec $SHELL` to apply.
 
+### Teach your agents
+
+Append the agent-watch reference to your global Claude Code memory:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/restot/agent-watch/main/CLAUDE.md >> ~/.claude/CLAUDE.md
+```
+
 ## Usage
 
 ```
