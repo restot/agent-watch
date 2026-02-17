@@ -136,6 +136,17 @@ JSON parsing is handled by jq. Interactive selection uses fzf with preview windo
 
 The `wait` command polls PID files and checks JSONL staleness to determine when a sub-agent has completed. It checks three signals in order: token log entries (hook-based completion), process liveness via PID files, and JSONL modification time as a fallback for agents without PID tracking.
 
+## Contributing
+
+1. Fork the repo
+2. Create a branch (`git checkout -b my-feature`)
+3. Make your changes to the `agent-watch` script
+4. Verify syntax: `bash -n agent-watch`
+5. Test against real session/agent files
+6. Submit a PR
+
+Keep changes minimal and focused. This is a single-file tool -- no build step, no dependencies beyond bash/jq/fzf.
+
 ## License
 
 MIT
