@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.2"
+VERSION="1.0.3"
 PROJECTS_DIR="$HOME/.claude/projects"
 DEBUG=0
 OFFSET=0
@@ -1013,7 +1013,10 @@ case "${1:-}" in
             exit 0
         fi
         echo "Updating: v$VERSION -> $latest"
-        curl -fsSL "https://github.com/restot/agent-watch/releases/latest/download/agent-watch" -o "$self" && chmod +x "$self"
+        tmpfile=$(mktemp) || die "Could not create temp file"
+        curl -fsSL "https://github.com/restot/agent-watch/releases/latest/download/agent-watch" -o "$tmpfile" || { rm -f "$tmpfile"; die "Download failed"; }
+        chmod +x "$tmpfile"
+        mv -f "$tmpfile" "$self"
         echo "Done."
         ;;
     -v|-V|--version|version)

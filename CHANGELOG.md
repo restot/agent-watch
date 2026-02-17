@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.3
+
+- **Fix self-update crash** -- `update` command was overwriting the running script mid-execution, causing bash to read corrupted content and error out. Now downloads to a temp file and atomically replaces via `mv`.
+
 ## 1.0.2
 
 - **Configurable stale timeout** -- `AGENT_WATCH_STALE_TIMEOUT` env var to configure the JSONL staleness threshold for `wait` fallback (default: 300s)
