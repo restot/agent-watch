@@ -194,7 +194,7 @@ view_agent() {
     # Inner render pipeline: offset input -> jq -> workdir strip -> color seds
     _render() {
         if [[ "$LAST" -eq 1 ]]; then
-            tail -1 "$filepath"
+            tac "$filepath" 2>/dev/null | jq -c 'select(.type == "user" or .type == "assistant" or .type == "tool_result")' 2>/dev/null | head -1 || true
         elif [[ "$OFFSET" -gt 0 ]]; then
             tail -n +"$((OFFSET + 1))" "$filepath"
         else
@@ -292,7 +292,7 @@ view_agent_full() {
     # Inner render pipeline: offset input -> jq (full, no truncation) -> workdir strip -> color seds
     _render_full() {
         if [[ "$LAST" -eq 1 ]]; then
-            tail -1 "$filepath"
+            tac "$filepath" 2>/dev/null | jq -c 'select(.type == "user" or .type == "assistant" or .type == "tool_result")' 2>/dev/null | head -1 || true
         elif [[ "$OFFSET" -gt 0 ]]; then
             tail -n +"$((OFFSET + 1))" "$filepath"
         else
