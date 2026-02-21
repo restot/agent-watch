@@ -9,11 +9,12 @@
 
 set -euo pipefail
 
-VERSION="1.0.6"
+VERSION="1.0.7"
 PROJECTS_DIR="$HOME/.claude/projects"
 DEBUG=0
 OFFSET=0
 LIMIT=0
+LAST=0
 
 # Home dir as it appears in Claude's project directory names (path separators become dashes)
 _HOME_PATTERN="${HOME//\//-}"
@@ -192,7 +193,9 @@ view_agent() {
 
     # Inner render pipeline: offset input -> jq -> workdir strip -> color seds
     _render() {
-        if [[ "$OFFSET" -gt 0 ]]; then
+        if [[ "$LAST" -eq 1 ]]; then
+            tail -1 "$filepath"
+        elif [[ "$OFFSET" -gt 0 ]]; then
             tail -n +"$((OFFSET + 1))" "$filepath"
         else
             cat "$filepath"
@@ -231,7 +234,10 @@ view_agent() {
         header_label="Session: $agent_id"
     fi
 
-    if [[ "$LIMIT" -gt 0 ]]; then
+    if [[ "$LAST" -eq 1 ]]; then
+        # Last message only, no header, no pager
+        _render
+    elif [[ "$LIMIT" -gt 0 ]]; then
         # Direct output with token counting (no pager)
         {
             _print_metadata_header "$filepath" "$header_label"
@@ -285,7 +291,9 @@ view_agent_full() {
 
     # Inner render pipeline: offset input -> jq (full, no truncation) -> workdir strip -> color seds
     _render_full() {
-        if [[ "$OFFSET" -gt 0 ]]; then
+        if [[ "$LAST" -eq 1 ]]; then
+            tail -1 "$filepath"
+        elif [[ "$OFFSET" -gt 0 ]]; then
             tail -n +"$((OFFSET + 1))" "$filepath"
         else
             cat "$filepath"
@@ -322,7 +330,10 @@ view_agent_full() {
         header_label="Session: $agent_id (full)"
     fi
 
-    if [[ "$LIMIT" -gt 0 ]]; then
+    if [[ "$LAST" -eq 1 ]]; then
+        # Last message only, no header, no pager
+        _render_full
+    elif [[ "$LIMIT" -gt 0 ]]; then
         # Direct output with token counting (no pager)
         {
             _print_metadata_header "$filepath" "$header_label"
@@ -967,6 +978,7 @@ All views display a metadata header:
 Pagination (for large sessions/agents):
   --limit N           Token budget (chars/4); prints NEXT_OFFSET=M when exceeded
   --offset N          Skip first N messages (combine with --limit to paginate)
+  --last              Show only the last message (no header, no pager)
 
 Other flags:
   --debug             Show debug output
@@ -1001,6 +1013,7 @@ while [[ $# -gt 0 ]]; do
         -v|-V|--version) ARGS+=("version"); shift ;;
         --offset)  OFFSET="${2:?--offset requires a value}"; shift 2 ;;
         --limit)   LIMIT="${2:?--limit requires a value}"; shift 2 ;;
+        --last)    LAST=1; shift ;;
         *)         ARGS+=("$1"); shift ;;
     esac
 done

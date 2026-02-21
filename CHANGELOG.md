@@ -1,7 +1,8 @@
 # Changelog
 
-## 1.0.6
+## 1.0.7
 
+- **`--last` flag** -- show only the last message from a session or agent log, with no header or pager. Works with `view`, `session`, and auto-detect ID commands.
 - **Stop truncating project names** -- project names were hard-truncated to 30-40 chars in `list-sessions`, `sessions`, and agent fzf views, making long project paths unsearchable and indistinguishable. Removed all truncation so full project names display and match correctly.
 
 ## 1.0.5
