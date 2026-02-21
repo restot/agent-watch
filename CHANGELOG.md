@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.6
+
+- **Stop truncating project names** -- project names were hard-truncated to 30-40 chars in `list-sessions`, `sessions`, and agent fzf views, making long project paths unsearchable and indistinguishable. Removed all truncation so full project names display and match correctly.
+
 ## 1.0.5
 
 - **Fix project filter on long paths** -- `list-sessions -p` filtered against the 30-char display-truncated project name, so long project paths were unsearchable. Filter now runs before truncation.
