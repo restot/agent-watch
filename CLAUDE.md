@@ -22,6 +22,7 @@ CLI tool for monitoring sub-agents and browsing sessions.
 |------|-------------|
 | `--limit N` | Token budget (chars/4); prints `NEXT_OFFSET=M` when exceeded |
 | `--offset N` | Skip first N messages (combine with `--limit` to paginate) |
+| `--last` | Show only the last message (no header, no pager) |
 
 ```
 agent-watch session abc123 --limit 5000
