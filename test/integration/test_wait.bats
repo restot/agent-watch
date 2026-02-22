@@ -38,7 +38,7 @@ load '../test_helper/fixtures'
 
 # ── dead PID file ─────────────────────────────────────────────────
 
-@test "cmd_wait with dead PID file reports completion" {
+@test "cmd_wait with dead PID file shows process exited message" {
     local _f
     _f=$(create_agent "myproject" "sess1" "aaa111" 4)
     # PID 99999 should not exist
@@ -47,7 +47,13 @@ load '../test_helper/fixtures'
     run cmd_wait "aaa111"
     [ "$status" -eq 0 ]
     # Process is dead, so agent should be reported as exited
-    [[ "$output" == *"process exited"* ]] || [[ "$output" == *"All agents completed"* ]]
+    [[ "$output" == *"process exited"* ]]
+}
+
+@test "agent_pid_alive with live PID returns 0" {
+    create_pid_file "live-agent" "$$"
+    run agent_pid_alive "live-agent"
+    [ "$status" -eq 0 ]
 }
 
 # ── staleness fallback ────────────────────────────────────────────

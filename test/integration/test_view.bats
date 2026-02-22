@@ -92,6 +92,44 @@ load '../test_helper/fixtures'
 
 # ── colorized markers ────────────────────────────────────────────
 
+# ── --last content verification (tests _tac fix) ────────────────
+
+@test "view_agent --last 1 returns actual message content" {
+    local filepath
+    filepath=$(create_agent_with_tools "myproject" "sess1" "tools1")
+
+    LAST=1
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    # Should contain actual content from the last assistant message
+    [[ "$output" == *"file1.txt"* ]]
+}
+
+# ── tool rendering ──────────────────────────────────────────────
+
+@test "view_agent renders tool_use with [TOOL] and tool name" {
+    local filepath
+    filepath=$(create_agent_with_tools "myproject" "sess1" "tools1")
+
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[TOOL]"* ]]
+    [[ "$output" == *"Bash"* ]]
+}
+
+@test "view_agent renders tool_result with [RESULT]" {
+    local filepath
+    filepath=$(create_agent_with_tools "myproject" "sess1" "tools1")
+
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[RESULT]"* ]]
+}
+
+# ── colorized markers ────────────────────────────────────────────
+
 @test "view_agent shows colorized USER and ASST markers" {
     local filepath
     filepath=$(create_agent "myproject" "sess1" "aaa111" 4)

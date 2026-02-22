@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1
+
+- **Fix `--last` returning empty output** -- `view` and `view full` both called an undefined `__tac` function in the `--last` single-message branch, silently producing no output. Fixed to use the correct `_tac` helper.
+- **Test coverage expansion** -- 110 tests (up from 79), adding coverage for `agent_pid_alive`, `view_agent_full`, interactive fzf modes (via mock fzf), tool rendering, active markers, and additional CLI flags. New test files: `test_agent_pid_alive`, `test_view_full`, `test_interactive`.
+- **Coverage tool accuracy** -- `coverage.sh` now uses a state machine to exclude heredoc bodies, jq/awk program strings, and preview scripts from the executable-line count. Reported coverage reflects actual bash code (72%, up from 42% with inflated denominator).
+- **Coverage badge** -- `coverage.sh` generates a shields.io-style SVG badge (`coverage-badge.svg`) with percentage and short SHA, displayed in the README.
+
 ## 1.1.0
 
 - **`--last N` token budget** -- `--last` now accepts an optional token count (e.g. `--last 5000`) to show the last N tokens of a conversation. Messages are selected from the end and displayed in chronological order. `--last` without a number still shows the single last message.

@@ -1,3 +1,5 @@
+![coverage](coverage-badge.svg)
+
 # agent-watch
 
 CLI tool for monitoring and browsing Claude Code sub-agent and session transcripts.

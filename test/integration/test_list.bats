@@ -78,6 +78,17 @@ load '../test_helper/fixtures'
     [[ "$output" != *"prompt_suggestion"* ]]
 }
 
+@test "cmd_list shows active marker for recently modified agent" {
+    local filepath
+    filepath=$(create_agent "myproject" "sess1" "aaa111" 4)
+    # Touch to current time to guarantee active
+    touch "$filepath"
+
+    run cmd_list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"●"* ]]
+}
+
 # ── cmd_list_sessions ─────────────────────────────────────────────
 
 @test "cmd_list_sessions shows sessions with prompts" {
@@ -111,6 +122,19 @@ load '../test_helper/fixtures'
     [ "$status" -eq 0 ]
     [[ "$output" == *"aaaa1111"* ]]
     [[ "$output" != *"bbbb2222"* ]]
+}
+
+@test "cmd_list_sessions shows active marker for recently modified session" {
+    local sid="aaaa1111aaaa1111"
+    local filepath
+    filepath=$(create_session "myproject" "$sid" 4)
+    create_session_index "myproject" "${sid}:hello"
+    # Touch to current time to guarantee active
+    touch "$filepath"
+
+    run cmd_list_sessions
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"●"* ]]
 }
 
 @test "cmd_list_sessions respects count" {

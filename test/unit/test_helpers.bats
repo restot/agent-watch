@@ -84,6 +84,21 @@ load '../test_helper/common'
     [[ "$output" == *"--debug"* ]]
 }
 
+@test "show_usage contains update command" {
+    run show_usage
+    [[ "$output" == *"update"* ]]
+}
+
+@test "show_usage contains sessions command" {
+    run show_usage
+    [[ "$output" == *"sessions"* ]]
+}
+
+@test "show_usage contains watch command" {
+    run show_usage
+    [[ "$output" == *"watch"* ]]
+}
+
 @test "show_usage contains AGENT_WATCH_STALE_TIMEOUT" {
     run show_usage
     [[ "$output" == *"AGENT_WATCH_STALE_TIMEOUT"* ]]

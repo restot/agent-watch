@@ -92,6 +92,19 @@ teardown() {
     [[ "$output" == *"All agents completed"* ]]
 }
 
+@test "agent-watch --debug flag does not break list" {
+    run env HOME="$FAKE_HOME" "$AW" --debug list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"aaa111bb"* ]]
+}
+
+@test "agent-watch -V shows version" {
+    # Use timeout+true to avoid curl hanging on version check
+    run timeout 5 env HOME="$FAKE_HOME" "$AW" -V
+    # May exit 0 or non-zero depending on curl, but should show version string
+    [[ "$output" == *"agent-watch"* ]]
+}
+
 @test "agent-watch nonexistent id exits 1" {
     run env HOME="$FAKE_HOME" "$AW" zzz-nonexistent
     [ "$status" -eq 1 ]
