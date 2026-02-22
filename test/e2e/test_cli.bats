@@ -41,8 +41,6 @@ teardown() {
 
 @test "agent-watch list works" {
     run env HOME="$FAKE_HOME" "$AW" list
-    echo "status=$status"
-    echo "$output"
     [ "$status" -eq 0 ]
     [[ "$output" == *"aaa111bb"* ]]
 }
