@@ -148,6 +148,12 @@ agent-watch session abc123de --limit 5000
 agent-watch session abc123de --offset 50 --limit 5000
 ```
 
+Show the last 5000 tokens of a session (chronological order):
+
+```sh
+agent-watch abc123de --last 5000
+```
+
 Wait for sub-agents to finish before continuing:
 
 ```sh
@@ -218,11 +224,10 @@ See the [wiki](https://github.com/restot/agent-watch/wiki) for guides and screen
 1. Fork the repo
 2. Create a branch (`git checkout -b my-feature`)
 3. Make your changes to the `agent-watch` script
-4. Verify syntax: `bash -n agent-watch`
-5. Test against real session/agent files
-6. Submit a PR
+4. Run the test suite: `make test`
+5. Submit a PR
 
-Keep changes minimal and focused. This is a single-file tool -- no build step, no dependencies beyond bash/jq/fzf.
+CI runs on both Ubuntu and macOS to catch GNU/BSD differences. Quick syntax + unit check: `make check`.
 
 ## License
 
