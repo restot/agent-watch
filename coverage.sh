@@ -295,7 +295,7 @@ elif (( PCT >= 40 )); then _badge_color="#dfb317"
 else _badge_color="#e05d44"
 fi
 
-cat > "$(dirname "$ORIG")/../coverage-badge.svg" <<BADGE_EOF
+cat > "coverage-badge.svg" <<BADGE_EOF
 <svg xmlns="http://www.w3.org/2000/svg" width="${_badge_w}" height="20" role="img" aria-label="coverage: ${_badge_text}">
   <title>coverage: ${_badge_text}</title>
   <linearGradient id="s" x2="0" y2="100%">
