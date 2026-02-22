@@ -17,15 +17,20 @@ setup() {
     mkdir -p "$HOME/.claude/projects"
     mkdir -p "$HOME/.claude/.agent-pids"
 
-    # Source briefly to get _HOME_PATTERN (needed by fixture helpers)
+    # Source briefly to get _HOME_PATTERN and fixture helpers
     export AGENT_WATCH_SOURCED=1
     source "$AW"
+
+    # Reset shell options and env — agent-watch sets -euo pipefail
+    set +e +o pipefail
+    unset AGENT_WATCH_SOURCED
+
     _HOME_PATTERN="${HOME//\//-}"
     _HOME_PATTERN="${_HOME_PATTERN#-}"
 
-    # Create standard fixtures
-    create_agent "test-project" "sess-111aaa222" "aaa111bbb" 4
-    create_session "test-project" "sess-222ccc333" 4
+    # Create standard fixtures (suppress echoed filepaths)
+    create_agent "test-project" "sess-111aaa222" "aaa111bbb" 4 >/dev/null
+    create_session "test-project" "sess-222ccc333" 4 >/dev/null
     create_session_index "test-project" "sess-222ccc333:hello cli test"
 }
 
@@ -36,6 +41,8 @@ teardown() {
 
 @test "agent-watch list works" {
     run env HOME="$FAKE_HOME" "$AW" list
+    echo "status=$status"
+    echo "$output"
     [ "$status" -eq 0 ]
     [[ "$output" == *"aaa111bb"* ]]
 }
