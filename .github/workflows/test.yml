@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: brew install jq bats-core shellcheck
+        run: brew install bash jq bats-core shellcheck
 
       - name: Run tests
         run: make test

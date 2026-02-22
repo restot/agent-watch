@@ -67,9 +67,9 @@ _fmt_tokens() {
 
 get_agent_files() {
     # Return 20 most recent agents, excluding prompt suggestions
-    find "$PROJECTS_DIR" -path "*/subagents/agent-*.jsonl" -type f 2>/dev/null | \
-        grep -v "aprompt_suggestion" | \
-        xargs ls -t 2>/dev/null | head -20 || true
+    local files
+    files=$(find "$PROJECTS_DIR" -path "*/subagents/agent-*.jsonl" -type f 2>/dev/null | grep -v "aprompt_suggestion" || true)
+    [[ -n "$files" ]] && echo "$files" | xargs ls -t 2>/dev/null | head -20 || true
 }
 
 format_agent_line() {
@@ -456,9 +456,9 @@ watch_agent() {
 
 get_session_files() {
     # Return all main session JSONL files (not sub-agents), sorted by mtime
-    find "$PROJECTS_DIR" -maxdepth 2 -name "*.jsonl" -type f 2>/dev/null | \
-        grep -vE '/subagents/' | \
-        xargs ls -t 2>/dev/null || true
+    local files
+    files=$(find "$PROJECTS_DIR" -maxdepth 2 -name "*.jsonl" -type f 2>/dev/null | grep -vE '/subagents/' || true)
+    [[ -n "$files" ]] && echo "$files" | xargs ls -t 2>/dev/null || true
 }
 
 # Batch-preload session metadata into associative arrays.
