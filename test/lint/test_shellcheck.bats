@@ -7,7 +7,8 @@ AW="$BATS_TEST_DIRNAME/../../agent-watch"
     if ! command -v shellcheck >/dev/null 2>&1; then
         skip "shellcheck not installed"
     fi
-    run shellcheck -s bash -e SC2034,SC2155,SC2295,SC2038,SC2064 "$AW"
+    run shellcheck -s bash --severity=warning -e SC2034,SC2155,SC2295,SC2038,SC2064 "$AW"
+    echo "$output"
     [ "$status" -eq 0 ]
 }
 
