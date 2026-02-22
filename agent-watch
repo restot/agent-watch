@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.7"
+VERSION="1.1.0"
 PROJECTS_DIR="$HOME/.claude/projects"
 DEBUG=0
 OFFSET=0
@@ -53,6 +53,18 @@ info() {
     echo -e "${BLUE}→${NC} $1"
 }
 
+# Format token counts: 1234 → 1.2k
+_fmt_tokens() {
+    local n="$1"
+    if [[ $n -ge 1000000 ]]; then
+        awk "BEGIN { printf \"%.1fM\", $n / 1000000 }"
+    elif [[ $n -ge 1000 ]]; then
+        awk "BEGIN { printf \"%.1fk\", $n / 1000 }"
+    else
+        echo "$n"
+    fi
+}
+
 get_agent_files() {
     # Return 20 most recent agents, excluding prompt suggestions
     find "$PROJECTS_DIR" -path "*/subagents/agent-*.jsonl" -type f 2>/dev/null | \
@@ -65,7 +77,11 @@ format_agent_line() {
     local agent_id project last_type msg_count mod_time status
 
     agent_id=$(basename "$filepath" .jsonl | sed 's/agent-//')
-    project=$(echo "$filepath" | grep -oE '[^/]+/[^/]+/subagents' | cut -d'/' -f1 | sed "s/-${_HOME_PATTERN}-//" | sed 's/-/\//g')
+    local project_dir
+    project_dir=$(echo "$filepath" | grep -oE '[^/]+/[^/]+/subagents' | cut -d'/' -f1)
+    project="${project_dir#-${_HOME_PATTERN}}"
+    project="${project#-}"
+    [[ -z "$project" ]] && project="~"
 
     # Get last activity type
     last_type=$(tail -1 "$filepath" 2>/dev/null | jq -r '.type // "?"' 2>/dev/null) || last_type="?"
@@ -143,18 +159,6 @@ _print_metadata_header() {
         fi
     fi
 
-    # --- format token counts: 1234 → 1.2k ---
-    _fmt_tokens() {
-        local n="$1"
-        if [[ $n -ge 1000000 ]]; then
-            awk "BEGIN { printf \"%.1fM\", $n / 1000000 }"
-        elif [[ $n -ge 1000 ]]; then
-            awk "BEGIN { printf \"%.1fk\", $n / 1000 }"
-        else
-            echo "$n"
-        fi
-    }
-
     # --- print ---
     # --- detect if sub-agent ---
     local is_subagent=""
@@ -189,12 +193,14 @@ view_agent() {
 
     # Prepare LIMIT marker for jq
     local mark=""
-    [[ "$LIMIT" -gt 0 ]] && mark="yes"
+    [[ "$LIMIT" -gt 0 || "$LAST" -gt 1 ]] && mark="yes"
 
     # Inner render pipeline: offset input -> jq -> workdir strip -> color seds
     _render() {
         if [[ "$LAST" -eq 1 ]]; then
             tac "$filepath" 2>/dev/null | jq -c 'select(.type == "user" or .type == "assistant" or .type == "tool_result")' 2>/dev/null | head -1 || true
+        elif [[ "$LAST" -gt 1 ]]; then
+            tac "$filepath" 2>/dev/null
         elif [[ "$OFFSET" -gt 0 ]]; then
             tail -n +"$((OFFSET + 1))" "$filepath"
         else
@@ -237,6 +243,20 @@ view_agent() {
     if [[ "$LAST" -eq 1 ]]; then
         # Last message only, no header, no pager
         _render
+    elif [[ "$LAST" -gt 1 ]]; then
+        # Last N tokens, chronological order, no header, no pager
+        _render | awk -v limit="$LAST" '
+            BEGIN { tokens = 0; exceeded = 0 }
+            /^@@MSG@@$/ {
+                if (exceeded) { exit 0 }
+                next
+            }
+            {
+                print
+                tokens += int(length / 4)
+                if (tokens >= limit) { exceeded = 1 }
+            }
+        ' | tac || true
     elif [[ "$LIMIT" -gt 0 ]]; then
         # Direct output with token counting (no pager)
         {
@@ -287,12 +307,14 @@ view_agent_full() {
 
     # Prepare LIMIT marker for jq
     local mark=""
-    [[ "$LIMIT" -gt 0 ]] && mark="yes"
+    [[ "$LIMIT" -gt 0 || "$LAST" -gt 1 ]] && mark="yes"
 
     # Inner render pipeline: offset input -> jq (full, no truncation) -> workdir strip -> color seds
     _render_full() {
         if [[ "$LAST" -eq 1 ]]; then
             tac "$filepath" 2>/dev/null | jq -c 'select(.type == "user" or .type == "assistant" or .type == "tool_result")' 2>/dev/null | head -1 || true
+        elif [[ "$LAST" -gt 1 ]]; then
+            tac "$filepath" 2>/dev/null
         elif [[ "$OFFSET" -gt 0 ]]; then
             tail -n +"$((OFFSET + 1))" "$filepath"
         else
@@ -333,6 +355,20 @@ view_agent_full() {
     if [[ "$LAST" -eq 1 ]]; then
         # Last message only, no header, no pager
         _render_full
+    elif [[ "$LAST" -gt 1 ]]; then
+        # Last N tokens, chronological order, no header, no pager
+        _render_full | awk -v limit="$LAST" '
+            BEGIN { tokens = 0; exceeded = 0 }
+            /^@@MSG@@$/ {
+                if (exceeded) { exit 0 }
+                next
+            }
+            {
+                print
+                tokens += int(length / 4)
+                if (tokens >= limit) { exceeded = 1 }
+            }
+        ' | tac || true
     elif [[ "$LIMIT" -gt 0 ]]; then
         # Direct output with token counting (no pager)
         {
@@ -553,9 +589,9 @@ PREVIEW_SCRIPT
         fi
         [[ $((now - mod_epoch)) -lt 30 ]] && st="●" || st=" "
 
-        local project_name="$project_dir"
-        project_name="${project_name//-${_HOME_PATTERN}-/}"
-        project_name="${project_name//-//}"
+        local project_name="${project_dir#-${_HOME_PATTERN}}"
+        project_name="${project_name#-}"
+        [[ -z "$project_name" ]] && project_name="~"
 
         printf "%-1s %-8s  %-11s  %4s  %-30s  %-60s\t%s\n" \
             "$st" "$short_id" "$mod_date $mod_time" "$msg_count" "$project_name" "$first_prompt" "$filepath"
@@ -696,9 +732,9 @@ cmd_list_sessions() {
         local status=" "
         [[ $((now - mod_epoch)) -lt 30 ]] && status="●"
 
-        local project_name="$project_dir"
-        project_name="${project_name//-${_HOME_PATTERN}-/}"
-        project_name="${project_name//-//}"
+        local project_name="${project_dir#-${_HOME_PATTERN}}"
+        project_name="${project_name#-}"
+        [[ -z "$project_name" ]] && project_name="~"
 
         # Filter by project (case-insensitive partial match)
         if [[ -n "$project_filter" ]]; then
@@ -762,7 +798,11 @@ PREVIEW_SCRIPT
 
         local agent_id project last_type msg_count mod_time st
         agent_id=$(basename "$filepath" .jsonl | sed 's/agent-//')
-        project=$(echo "$filepath" | grep -oE '[^/]+/[^/]+/subagents' | cut -d'/' -f1 | sed "s/-${_HOME_PATTERN}-//" | sed 's/-/\//g') || project="?"
+        local project_dir
+        project_dir=$(echo "$filepath" | grep -oE '[^/]+/[^/]+/subagents' | cut -d'/' -f1)
+        project="${project_dir#-${_HOME_PATTERN}}"
+        project="${project#-}"
+        [[ -z "$project" ]] && project="~"
         last_type=$(tail -1 "$filepath" 2>/dev/null | jq -r '.type // "?"' 2>/dev/null) || last_type="?"
         msg_count=$(wc -l < "$filepath" 2>/dev/null | tr -d ' ')
         mod_time=$(stat -f "%Sm" -t "%H:%M" "$filepath" 2>/dev/null || stat -c "%y" "$filepath" 2>/dev/null | cut -d' ' -f2 | cut -d':' -f1,2)
@@ -978,7 +1018,7 @@ All views display a metadata header:
 Pagination (for large sessions/agents):
   --limit N           Token budget (chars/4); prints NEXT_OFFSET=M when exceeded
   --offset N          Skip first N messages (combine with --limit to paginate)
-  --last              Show only the last message (no header, no pager)
+  --last [N]          Show last message, or last N tokens (no header, no pager)
 
 Other flags:
   --debug             Show debug output
@@ -1004,6 +1044,9 @@ Examples:
 EOF
 }
 
+# Allow sourcing for tests: source all functions without running arg parsing
+[[ "${AGENT_WATCH_SOURCED:-}" == "1" ]] && return 0 2>/dev/null || true
+
 # Parse all flags from any position, collect positional args
 ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -1013,7 +1056,13 @@ while [[ $# -gt 0 ]]; do
         -v|-V|--version) ARGS+=("version"); shift ;;
         --offset)  OFFSET="${2:?--offset requires a value}"; shift 2 ;;
         --limit)   LIMIT="${2:?--limit requires a value}"; shift 2 ;;
-        --last)    LAST=1; shift ;;
+        --last)
+            if [[ -n "${2:-}" && "$2" =~ ^[0-9]+$ ]]; then
+                LAST="$2"; shift 2
+            else
+                LAST=1; shift
+            fi
+            ;;
         *)         ARGS+=("$1"); shift ;;
     esac
 done

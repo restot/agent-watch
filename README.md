@@ -100,7 +100,7 @@ All views display a metadata header:
 Pagination (for large sessions/agents):
   --limit N           Token budget (chars/4); prints NEXT_OFFSET=M when exceeded
   --offset N          Skip first N messages (combine with --limit to paginate)
-  --last              Show only the last message (no header, no pager)
+  --last [N]          Show last message, or last N tokens (no header, no pager)
 
 Other flags:
   --debug             Show debug output

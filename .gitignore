@@ -2,5 +2,9 @@
 !agent-watch
 !LICENSE
 !README.md
-.mulch/*
+!CHANGELOG.md
 !CLAUDE.md
+!Makefile
+!test/**
+!.github/**
+.mulch/*

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- **`--last N` token budget** -- `--last` now accepts an optional token count (e.g. `--last 5000`) to show the last N tokens of a conversation. Messages are selected from the end and displayed in chronological order. `--last` without a number still shows the single last message.
+- **Fix project name display** -- project names with dashes (e.g. `ai-voice`) were incorrectly split into `ai/voice`. Project names now display as raw directory names with the home prefix stripped, matching Claude CLI conventions.
+- **Test suite** -- 79 tests across lint, unit, integration, and e2e suites using bats-core. CI runs on both Ubuntu and macOS to cover GNU/BSD differences.
+
 ## 1.0.7
 
 - **`--last` flag** -- show only the last message from a session or agent log, with no header or pager. Works with `view`, `session`, and auto-detect ID commands.
