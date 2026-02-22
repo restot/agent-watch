@@ -27,6 +27,13 @@ else
     _STAT_CMD="gnu"
 fi
 
+# Portable tac (GNU has tac, BSD/macOS has tail -r)
+if command -v tac >/dev/null 2>&1; then
+    _tac() { tac "$@"; }
+else
+    _tac() { tail -r "$@"; }
+fi
+
 # Required dependencies
 command -v jq >/dev/null 2>&1 || { echo -e '\033[0;31mError:\033[0m Required: jq (https://jqlang.github.io/jq/)'; exit 1; }
 
@@ -198,9 +205,9 @@ view_agent() {
     # Inner render pipeline: offset input -> jq -> workdir strip -> color seds
     _render() {
         if [[ "$LAST" -eq 1 ]]; then
-            tac "$filepath" 2>/dev/null | jq -c 'select(.type == "user" or .type == "assistant" or .type == "tool_result")' 2>/dev/null | head -1 || true
+            __tac "$filepath" 2>/dev/null | jq -c 'select(.type == "user" or .type == "assistant" or .type == "tool_result")' 2>/dev/null | head -1 || true
         elif [[ "$LAST" -gt 1 ]]; then
-            tac "$filepath" 2>/dev/null
+            _tac "$filepath" 2>/dev/null
         elif [[ "$OFFSET" -gt 0 ]]; then
             tail -n +"$((OFFSET + 1))" "$filepath"
         else
@@ -256,7 +263,7 @@ view_agent() {
                 tokens += int(length / 4)
                 if (tokens >= limit) { exceeded = 1 }
             }
-        ' | tac || true
+        ' | _tac || true
     elif [[ "$LIMIT" -gt 0 ]]; then
         # Direct output with token counting (no pager)
         {
@@ -312,9 +319,9 @@ view_agent_full() {
     # Inner render pipeline: offset input -> jq (full, no truncation) -> workdir strip -> color seds
     _render_full() {
         if [[ "$LAST" -eq 1 ]]; then
-            tac "$filepath" 2>/dev/null | jq -c 'select(.type == "user" or .type == "assistant" or .type == "tool_result")' 2>/dev/null | head -1 || true
+            __tac "$filepath" 2>/dev/null | jq -c 'select(.type == "user" or .type == "assistant" or .type == "tool_result")' 2>/dev/null | head -1 || true
         elif [[ "$LAST" -gt 1 ]]; then
-            tac "$filepath" 2>/dev/null
+            _tac "$filepath" 2>/dev/null
         elif [[ "$OFFSET" -gt 0 ]]; then
             tail -n +"$((OFFSET + 1))" "$filepath"
         else
@@ -368,7 +375,7 @@ view_agent_full() {
                 tokens += int(length / 4)
                 if (tokens >= limit) { exceeded = 1 }
             }
-        ' | tac || true
+        ' | _tac || true
     elif [[ "$LIMIT" -gt 0 ]]; then
         # Direct output with token counting (no pager)
         {

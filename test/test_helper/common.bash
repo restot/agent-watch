@@ -16,6 +16,9 @@ setup() {
     export AGENT_WATCH_SOURCED=1
     source "${BATS_TEST_DIRNAME}/../../agent-watch"
 
+    # Reset shell options — agent-watch sets -euo pipefail which interferes with bats
+    set +e +o pipefail
+
     # Recompute _HOME_PATTERN since HOME changed after initial source
     _HOME_PATTERN="${HOME//\//-}"
     _HOME_PATTERN="${_HOME_PATTERN#-}"
