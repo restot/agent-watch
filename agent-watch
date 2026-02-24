@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-VERSION="1.1.1"
+VERSION="1.1.2"
 PROJECTS_DIR="$HOME/.claude/projects"
 DEBUG=0
 OFFSET=0
@@ -207,7 +207,7 @@ view_agent() {
         if [[ "$LAST" -eq 1 ]]; then
             _tac "$filepath" 2>/dev/null | jq -c 'select(.type == "user" or .type == "assistant" or .type == "tool_result")' 2>/dev/null | head -1 || true
         elif [[ "$LAST" -gt 1 ]]; then
-            _tac "$filepath" 2>/dev/null
+            cat "$filepath"
         elif [[ "$OFFSET" -gt 0 ]]; then
             tail -n +"$((OFFSET + 1))" "$filepath"
         else
@@ -253,17 +253,19 @@ view_agent() {
     elif [[ "$LAST" -gt 1 ]]; then
         # Last N tokens, chronological order, no header, no pager
         _render | awk -v limit="$LAST" '
-            BEGIN { tokens = 0; exceeded = 0 }
+            BEGIN { bc = 0; cur = ""; bt = 0; total = 0 }
             /^@@MSG@@$/ {
-                if (exceeded) { exit 0 }
-                next
+                if (cur != "") { blocks[++bc] = cur; btok[bc] = bt; total += bt }
+                cur = ""; bt = 0; next
             }
-            {
-                print
-                tokens += int(length / 4)
-                if (tokens >= limit) { exceeded = 1 }
+            { cur = (cur == "" ? $0 : cur "\n" $0); bt += int(length / 4) }
+            END {
+                if (cur != "") { blocks[++bc] = cur; btok[bc] = bt; total += bt }
+                s = 1
+                while (s < bc && total > limit) { total -= btok[s]; s++ }
+                for (i = s; i <= bc; i++) print blocks[i]
             }
-        ' | _tac || true
+        '
     elif [[ "$LIMIT" -gt 0 ]]; then
         # Direct output with token counting (no pager)
         {
@@ -321,7 +323,7 @@ view_agent_full() {
         if [[ "$LAST" -eq 1 ]]; then
             _tac "$filepath" 2>/dev/null | jq -c 'select(.type == "user" or .type == "assistant" or .type == "tool_result")' 2>/dev/null | head -1 || true
         elif [[ "$LAST" -gt 1 ]]; then
-            _tac "$filepath" 2>/dev/null
+            cat "$filepath"
         elif [[ "$OFFSET" -gt 0 ]]; then
             tail -n +"$((OFFSET + 1))" "$filepath"
         else
@@ -365,17 +367,19 @@ view_agent_full() {
     elif [[ "$LAST" -gt 1 ]]; then
         # Last N tokens, chronological order, no header, no pager
         _render_full | awk -v limit="$LAST" '
-            BEGIN { tokens = 0; exceeded = 0 }
+            BEGIN { bc = 0; cur = ""; bt = 0; total = 0 }
             /^@@MSG@@$/ {
-                if (exceeded) { exit 0 }
-                next
+                if (cur != "") { blocks[++bc] = cur; btok[bc] = bt; total += bt }
+                cur = ""; bt = 0; next
             }
-            {
-                print
-                tokens += int(length / 4)
-                if (tokens >= limit) { exceeded = 1 }
+            { cur = (cur == "" ? $0 : cur "\n" $0); bt += int(length / 4) }
+            END {
+                if (cur != "") { blocks[++bc] = cur; btok[bc] = bt; total += bt }
+                s = 1
+                while (s < bc && total > limit) { total -= btok[s]; s++ }
+                for (i = s; i <= bc; i++) print blocks[i]
             }
-        ' | _tac || true
+        '
     elif [[ "$LIMIT" -gt 0 ]]; then
         # Direct output with token counting (no pager)
         {

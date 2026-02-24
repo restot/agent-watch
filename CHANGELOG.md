@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.2
+
+- **Fix `--last N` reversing multi-line content** -- the `--last N` token-budget mode reversed all lines within messages because it used `_tac` on the rendered output. Multi-line assistant responses (tables, formatted text) appeared with lines in reverse order. Fixed by reading the file forward and using awk to collect message blocks, dropping oldest blocks until within the token budget.
+
 ## 1.1.1
 
 - **Fix `--last` returning empty output** -- `view` and `view full` both called an undefined `__tac` function in the `--last` single-message branch, silently producing no output. Fixed to use the correct `_tac` helper.

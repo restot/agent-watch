@@ -55,6 +55,31 @@ load '../test_helper/fixtures'
     [[ "$output" != *"Model:"* ]]
 }
 
+@test "view_agent --last N preserves multi-line content order" {
+    local dir="$PROJECTS_DIR/-${_HOME_PATTERN}-mltest/sess1/subagents"
+    mkdir -p "$dir"
+    local filepath="${dir}/agent-ml111.jsonl"
+    : > "$filepath"
+
+    # User message
+    echo '{"type":"user","sessionId":"sess1","agentId":"ml111","slug":"test","isSidechain":true,"permissionMode":"default","cwd":"'"${HOME}/mltest"'","version":"2.1.44","gitBranch":"main","timestamp":"2026-02-17T07:49:25.485Z","message":{"role":"user","content":"summarize"}}' >> "$filepath"
+
+    # Assistant with multi-line text (line1 before line2 before line3)
+    echo '{"type":"assistant","timestamp":"2026-02-17T07:49:26.000Z","message":{"role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"line1-first\nline2-second\nline3-third"}],"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":80,"cache_creation_input_tokens":20}}}' >> "$filepath"
+
+    LAST=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+
+    # Verify lines appear in correct order (line1 before line3)
+    local pos1 pos3
+    pos1=$(echo "$output" | grep -n "line1-first" | head -1 | cut -d: -f1)
+    pos3=$(echo "$output" | grep -n "line3-third" | head -1 | cut -d: -f1)
+    [ -n "$pos1" ]
+    [ -n "$pos3" ]
+    [ "$pos1" -lt "$pos3" ]
+}
+
 # ── --limit mode ──────────────────────────────────────────────────
 
 @test "view_agent --limit on large agent emits NEXT_OFFSET" {
