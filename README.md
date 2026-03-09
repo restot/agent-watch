@@ -105,11 +105,13 @@ Pagination (for large sessions/agents):
   --last [N]          Show last message, or last N tokens (no header, no pager)
 
 Other flags:
+  --no-color          Disable colored output (also respects NO_COLOR env var)
   --debug             Show debug output
   --help              Show this help message
   --version           Show version number
 
 Environment:
+  NO_COLOR                    Disable colored output (see https://no-color.org/)
   AGENT_WATCH_STALE_TIMEOUT   Staleness threshold in seconds for wait fallback (default: 300)
 ```
 
@@ -154,6 +156,14 @@ Show the last 5000 tokens of a session (chronological order):
 
 ```sh
 agent-watch abc123de --last 5000
+```
+
+Disable colors (useful when calling from agents to save tokens):
+
+```sh
+NO_COLOR=1 agent-watch view
+# or
+agent-watch --no-color view
 ```
 
 Wait for sub-agents to finish before continuing:
@@ -209,7 +219,7 @@ agent-watch watch
 
 agent-watch reads Claude Code's JSONL session and agent files from `~/.claude/projects/`. It parses metadata from the first few entries in each file (model, version, branch, timestamps) and aggregates token usage across all assistant entries.
 
-JSON parsing is handled by jq. Interactive selection uses fzf with preview windows that show session metadata and recent messages. Output is colorized with role-based markers (`[USER]`, `[ASST]`, `[TOOL]`, `[RESULT]`) for readability.
+JSON parsing is handled by jq. Interactive selection uses fzf with preview windows that show session metadata and recent messages. Output is colorized with role-based markers (`[USER]`, `[ASST]`, `[TOOL]`, `[RESULT]`) for readability. Color can be disabled via `NO_COLOR=1` or `--no-color` to reduce token overhead when output is consumed by agents.
 
 </details>
 
@@ -226,10 +236,19 @@ See the [wiki](https://github.com/restot/agent-watch/wiki) for guides and screen
 1. Fork the repo
 2. Create a branch (`git checkout -b my-feature`)
 3. Make your changes to the `agent-watch` script
-4. Run the test suite: `make test`
+4. Run the test suite: `make test` (or `make docker-test` to run in Docker)
 5. Submit a PR
 
 CI runs on both Ubuntu and macOS to catch GNU/BSD differences. Quick syntax + unit check: `make check`.
+
+### Docker
+
+Run tests and coverage analysis in Docker without installing dependencies locally:
+
+```sh
+make docker-test       # Run all tests
+make docker-coverage   # Run coverage, copies badge + HTML report to project root
+```
 
 ## License
 

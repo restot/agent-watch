@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-VERSION="1.1.2"
+VERSION="1.1.3"
 PROJECTS_DIR="$HOME/.claude/projects"
 DEBUG=0
 OFFSET=0
@@ -35,17 +35,55 @@ else
 fi
 
 # Required dependencies
-command -v jq >/dev/null 2>&1 || { echo -e '\033[0;31mError:\033[0m Required: jq (https://jqlang.github.io/jq/)'; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "Error: Required: jq (https://jqlang.github.io/jq/)"; exit 1; }
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-DIM='\033[2m'
+# Colors — disabled by NO_COLOR env var (https://no-color.org/) or --no-color flag
+if [[ -n "${NO_COLOR:-}" ]]; then
+    _COLOR=0
+else
+    _COLOR=1
+fi
+
+_setup_colors() {
+    if (( _COLOR )); then
+        RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m'
+        BLUE='\033[0;34m' MAGENTA='\033[0;35m' CYAN='\033[0;36m'
+        NC='\033[0m' DIM='\033[2m'
+    else
+        RED='' GREEN='' YELLOW='' BLUE='' MAGENTA='' CYAN='' NC='' DIM=''
+    fi
+}
+_setup_colors
+
+# Colorize @@TAG@@ markers in render pipeline; plain text when NO_COLOR
+_color_sed() {
+    if (( _COLOR )); then
+        sed $'s/@@USER@@/\033[0;32m[USER]\033[0m/g' | \
+        sed $'s/@@ASST@@/\033[0;35m[ASST]\033[0m/g' | \
+        sed $'s/@@TOOL@@ \\([^ ]*\\) @@TOOLEND@@/\033[0;34m[TOOL]\033[0m \033[0;33m\\1\033[0m/g' | \
+        sed $'s/@@RESULT@@/\033[2m[RESULT]/g'
+    else
+        sed 's/@@USER@@/[USER]/g' | \
+        sed 's/@@ASST@@/[ASST]/g' | \
+        sed 's/@@TOOL@@ \([^ ]*\) @@TOOLEND@@/[TOOL] \1/g' | \
+        sed 's/@@RESULT@@/[RESULT]/g'
+    fi
+}
+
+# Unbuffered variant for watch/tail -f
+_color_sed_u() {
+    if (( _COLOR )); then
+        sed -u $'s/@@USER@@/\033[0;32m[USER]\033[0m/g' | \
+        sed -u $'s/@@ASST@@/\033[0;35m[ASST]\033[0m/g' | \
+        sed -u $'s/@@TOOL@@ \\([^ ]*\\) @@TOOLEND@@/\033[0;34m[TOOL]\033[0m \033[0;33m\\1\033[0m/g' | \
+        sed -u $'s/@@RESULT@@/\033[2m[RESULT]\033[0m/g'
+    else
+        sed -u 's/@@USER@@/[USER]/g' | \
+        sed -u 's/@@ASST@@/[ASST]/g' | \
+        sed -u 's/@@TOOL@@ \([^ ]*\) @@TOOLEND@@/[TOOL] \1/g' | \
+        sed -u 's/@@RESULT@@/[RESULT]/g'
+    fi
+}
 
 die() {
     echo -e "${RED}Error:${NC} $1"
@@ -231,10 +269,7 @@ view_agent() {
             else empty end
         ' 2>/dev/null | \
         if [[ -n "$workdir_escaped" ]]; then sed "s/$workdir_escaped\///g"; else cat; fi | \
-        sed $'s/@@USER@@/\033[0;32m[USER]\033[0m/g' | \
-        sed $'s/@@ASST@@/\033[0;35m[ASST]\033[0m/g' | \
-        sed $'s/@@TOOL@@ \\([^ ]*\\) @@TOOLEND@@/\033[0;34m[TOOL]\033[0m \033[0;33m\\1\033[0m/g' | \
-        sed $'s/@@RESULT@@/\033[2m[RESULT]/g'
+        _color_sed
     }
 
     # Determine label
@@ -345,10 +380,7 @@ view_agent_full() {
             else empty end
         ' 2>/dev/null | \
         if [[ -n "$workdir_escaped" ]]; then sed "s/$workdir_escaped\///g"; else cat; fi | \
-        sed $'s/@@USER@@/\033[0;32m[USER]\033[0m/g' | \
-        sed $'s/@@ASST@@/\033[0;35m[ASST]\033[0m/g' | \
-        sed $'s/@@TOOL@@ \\([^ ]*\\) @@TOOLEND@@/\033[0;34m[TOOL]\033[0m \033[0;33m\\1\033[0m/g' | \
-        sed $'s/@@RESULT@@/\033[2m[RESULT]\033[0m/g'
+        _color_sed
     }
 
     # Determine label
@@ -459,10 +491,7 @@ watch_agent() {
         else empty end
     ' 2>/dev/null | \
     { if [[ -n "$workdir_escaped" ]]; then sed -u "s/$workdir_escaped\///g"; else cat; fi; } | \
-    sed -u $'s/@@USER@@/\033[0;32m[USER]\033[0m/g' | \
-    sed -u $'s/@@ASST@@/\033[0;35m[ASST]\033[0m/g' | \
-    sed -u $'s/@@TOOL@@ \\([^ ]*\\) @@TOOLEND@@/\033[0;34m[TOOL]\033[0m \033[0;33m\\1\033[0m/g' | \
-    sed -u $'s/@@RESULT@@/\033[2m[RESULT]\033[0m/g'
+    _color_sed_u
 }
 
 get_session_files() {
@@ -1032,11 +1061,13 @@ Pagination (for large sessions/agents):
   --last [N]          Show last message, or last N tokens (no header, no pager)
 
 Other flags:
+  --no-color          Disable colored output (also respects NO_COLOR env var)
   --debug             Show debug output
   --help              Show this help message
   --version           Show version number
 
 Environment:
+  NO_COLOR                    Disable colored output (see https://no-color.org/)
   AGENT_WATCH_STALE_TIMEOUT   Staleness threshold in seconds for wait fallback (default: 300)
 
 Examples:
@@ -1063,6 +1094,7 @@ ARGS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --debug)   DEBUG=1; shift ;;
+        --no-color) _COLOR=0; _setup_colors; shift ;;
         --help)    show_usage; exit 0 ;;
         -v|-V|--version) ARGS+=("version"); shift ;;
         --offset)  OFFSET="${2:?--offset requires a value}"; shift 2 ;;

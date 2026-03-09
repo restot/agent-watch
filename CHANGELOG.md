@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.3
+
+- **`NO_COLOR` support** -- respects the [NO_COLOR](https://no-color.org/) environment variable and adds a `--no-color` flag to disable ANSI color output. When calling agent-watch from agents, this avoids wasting tokens on escape codes. Colors are stripped from all output: metadata headers, role markers (`[USER]`, `[ASST]`, `[TOOL]`, `[RESULT]`), list/session views, and helper messages.
+- **Docker test environment** -- added `Dockerfile` and `make docker-test` / `make docker-coverage` targets for running the full test suite and coverage analysis in Docker without installing dependencies locally.
+- **Refactored color pipeline** -- deduplicated three copy-pasted sed pipelines into shared `_color_sed` / `_color_sed_u` helpers, reducing code and ensuring consistent behavior across `view`, `view full`, and `watch` modes.
+
 ## 1.1.2
 
 - **Fix `--last N` reversing multi-line content** -- the `--last N` token-budget mode reversed all lines within messages because it used `_tac` on the rendered output. Multi-line assistant responses (tables, formatted text) appeared with lines in reverse order. Fixed by reading the file forward and using awk to collect message blocks, dropping oldest blocks until within the token budget.

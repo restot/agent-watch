@@ -167,3 +167,35 @@ load '../test_helper/fixtures'
     # Check for ANSI-colorized [ASST] marker (magenta: \033[0;35m)
     [[ "$output" == *"[ASST]"* ]]
 }
+
+# ── NO_COLOR support ────────────────────────────────────────────
+
+@test "view_agent with NO_COLOR outputs no ANSI escapes" {
+    local filepath
+    filepath=$(create_agent_with_tools "myproject" "sess1" "nocolor1")
+
+    _COLOR=0
+    _setup_colors
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    # Should have plain text markers
+    [[ "$output" == *"[USER]"* ]]
+    [[ "$output" == *"[TOOL]"* ]]
+    [[ "$output" == *"[RESULT]"* ]]
+    # Should NOT contain ANSI escape sequences
+    [[ "$output" != *$'\033['* ]]
+}
+
+@test "view_agent with _COLOR=1 outputs ANSI escapes" {
+    local filepath
+    filepath=$(create_agent "myproject" "sess1" "color1" 4)
+
+    _COLOR=1
+    _setup_colors
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    # Should contain ANSI escape sequences
+    [[ "$output" == *$'\033['* ]]
+}

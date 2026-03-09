@@ -104,6 +104,55 @@ load '../test_helper/common'
     [[ "$output" == *"AGENT_WATCH_STALE_TIMEOUT"* ]]
 }
 
+@test "show_usage contains --no-color" {
+    run show_usage
+    [[ "$output" == *"--no-color"* ]]
+}
+
+@test "show_usage contains NO_COLOR env var" {
+    run show_usage
+    [[ "$output" == *"NO_COLOR"* ]]
+}
+
+# --- NO_COLOR support ---
+
+@test "NO_COLOR env var disables color variables" {
+    _COLOR=0
+    _setup_colors
+    [[ -z "$RED" ]]
+    [[ -z "$GREEN" ]]
+    [[ -z "$BLUE" ]]
+    [[ -z "$NC" ]]
+    [[ -z "$DIM" ]]
+}
+
+@test "colors are populated when _COLOR=1" {
+    _COLOR=1
+    _setup_colors
+    [[ -n "$RED" ]]
+    [[ -n "$GREEN" ]]
+    [[ -n "$NC" ]]
+    [[ -n "$DIM" ]]
+}
+
+@test "_color_sed renders plain text markers when _COLOR=0" {
+    _COLOR=0
+    result=$(echo "@@USER@@ hello" | _color_sed)
+    [[ "$result" == "[USER] hello" ]]
+}
+
+@test "_color_sed renders TOOL plain text when _COLOR=0" {
+    _COLOR=0
+    result=$(echo "@@TOOL@@ Bash @@TOOLEND@@ ls" | _color_sed)
+    [[ "$result" == "[TOOL] Bash ls" ]]
+}
+
+@test "_color_sed renders RESULT plain text when _COLOR=0" {
+    _COLOR=0
+    result=$(echo "@@RESULT@@ some output" | _color_sed)
+    [[ "$result" == "[RESULT] some output" ]]
+}
+
 # --- _fmt_tokens ---
 
 @test "_fmt_tokens 500 returns 500" {
