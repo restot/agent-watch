@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.4
+
+- **Bash 4+ auto-detection** -- on macOS where `/bin/bash` is 3.2, agent-watch now detects the outdated version at startup and re-execs itself under Homebrew bash (`/opt/homebrew/bin/bash` or `/usr/local/bin/bash`). If no suitable bash is found, it exits with a clear error and install instructions.
+
 ## 1.1.3
 
 - **`NO_COLOR` support** -- respects the [NO_COLOR](https://no-color.org/) environment variable and adds a `--no-color` flag to disable ANSI color output. When calling agent-watch from agents, this avoids wasting tokens on escape codes. Colors are stripped from all output: metadata headers, role markers (`[USER]`, `[ASST]`, `[TOOL]`, `[RESULT]`), list/session views, and helper messages.
