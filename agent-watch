@@ -270,13 +270,13 @@ view_agent() {
                 (.message.content // [])[] |
                 if .type == "tool_use" then
                     (.input | tostring) as $inp |
-                    "@@TOOL@@ \(.name) @@TOOLEND@@ " + $inp[:200] + (if ($inp | length) > 200 then " [...]" else "" end)
+                    "@@TOOL@@ \(.name) @@TOOLEND@@ " + $inp
                 elif .type == "text" then
                     "@@ASST@@ " + .text
                 else empty end
             elif .type == "tool_result" then
                 ((.content[0].text // .content // "") | tostring) as $res |
-                "@@RESULT@@ " + $res[:100] + (if ($res | length) > 100 then " [...]" else "" end)
+                "@@RESULT@@ " + $res
             else empty end
         ' 2>/dev/null | \
         if [[ -n "$workdir_escaped" ]]; then sed "s/$workdir_escaped\///g"; else cat; fi | \
@@ -601,13 +601,13 @@ echo -e "\033[2m─────────────────────�
 echo ""
 head -30 "$f" 2>/dev/null | jq -r '
     if .type == "user" then
-        "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)[:300]
+        "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
     elif .type == "assistant" then
         (.message.content // [])[] |
         if .type == "text" then
-            "\u001b[0;35m[ASST]\u001b[0m " + .text[:300]
+            "\u001b[0;35m[ASST]\u001b[0m " + .text
         elif .type == "tool_use" then
-            "\u001b[0;34m[TOOL]\u001b[0m \u001b[0;33m" + .name + "\u001b[0m " + (.input | tostring)[:100]
+            "\u001b[0;34m[TOOL]\u001b[0m \u001b[0;33m" + .name + "\u001b[0m " + (.input | tostring)
         else empty end
     else empty end
 ' 2>/dev/null
@@ -830,13 +830,13 @@ echo -e "\033[2m─────────────────────�
 echo ""
 head -30 "$f" 2>/dev/null | jq -r '
     if .type == "user" then
-        "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)[:300]
+        "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
     elif .type == "assistant" then
         (.message.content // [])[] |
         if .type == "text" then
-            "\u001b[0;35m[ASST]\u001b[0m " + .text[:300]
+            "\u001b[0;35m[ASST]\u001b[0m " + .text
         elif .type == "tool_use" then
-            "\u001b[0;34m[TOOL]\u001b[0m \u001b[0;33m" + .name + "\u001b[0m " + (.input | tostring)[:100]
+            "\u001b[0;34m[TOOL]\u001b[0m \u001b[0;33m" + .name + "\u001b[0m " + (.input | tostring)
         else empty end
     else empty end
 ' 2>/dev/null
