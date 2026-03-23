@@ -7,6 +7,17 @@
 #   agent-watch wait <ids>   - Wait for agents to complete
 #   agent-watch sessions     - Browse main agent sessions
 
+# Require bash 4+ (for associative arrays). Re-exec under Homebrew bash if needed.
+if ((BASH_VERSINFO[0] < 4)); then
+    for _candidate in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+        if [[ -x "$_candidate" ]] && "$_candidate" -c '((BASH_VERSINFO[0]>=4))' 2>/dev/null; then
+            exec "$_candidate" "$0" "$@"
+        fi
+    done
+    echo "agent-watch: requires bash 4+ (found $BASH_VERSION). Install with: brew install bash" >&2
+    exit 1
+fi
+
 set -euo pipefail
 
 VERSION="1.1.3"
