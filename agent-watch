@@ -20,7 +20,7 @@ fi
 
 set -euo pipefail
 
-VERSION="1.1.4"
+VERSION="1.1.5"
 PROJECTS_DIR="$HOME/.claude/projects"
 DEBUG=0
 OFFSET=0

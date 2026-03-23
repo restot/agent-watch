@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.5
+
+- **Remove all content truncation** -- tool inputs, tool results, assistant text, and user text are no longer truncated in any render path (view, fzf preview). Previously tool inputs were cut at 200 chars, results at 100, and text at 300, which caused downstream consumers to miss Edit/Write content.
+
 ## 1.1.4
 
 - **Bash 4+ auto-detection** -- on macOS where `/bin/bash` is 3.2, agent-watch now detects the outdated version at startup and re-execs itself under Homebrew bash (`/opt/homebrew/bin/bash` or `/usr/local/bin/bash`). If no suitable bash is found, it exits with a clear error and install instructions.
