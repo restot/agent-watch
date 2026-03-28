@@ -174,3 +174,44 @@ load '../test_helper/common'
     run _fmt_tokens 1000
     [[ "$output" == "1.0k" ]]
 }
+
+# --- _color_sed: new tags (COMPACT, HOOK, SUMMARY) ---
+
+@test "_color_sed renders COMPACT plain text when _COLOR=0" {
+    _COLOR=0
+    result=$(echo "@@COMPACT@@ Conversation compacted (auto, 168134 tokens before)" | _color_sed)
+    [[ "$result" == "[COMPACT] Conversation compacted (auto, 168134 tokens before)" ]]
+}
+
+@test "_color_sed renders HOOK plain text when _COLOR=0" {
+    _COLOR=0
+    result=$(echo "@@HOOK@@ SessionStart:startup → session-start.sh" | _color_sed)
+    [[ "$result" == "[HOOK] SessionStart:startup → session-start.sh" ]]
+}
+
+@test "_color_sed renders SUMMARY plain text when _COLOR=0" {
+    _COLOR=0
+    result=$(echo "@@SUMMARY@@ This session is being continued" | _color_sed)
+    [[ "$result" == "[SUMMARY] This session is being continued" ]]
+}
+
+@test "_color_sed renders COMPACT with ANSI when _COLOR=1" {
+    _COLOR=1
+    result=$(echo "@@COMPACT@@ compacted" | _color_sed)
+    [[ "$result" == *"[COMPACT]"* ]]
+    [[ "$result" == *$'\033['* ]]
+}
+
+@test "_color_sed renders HOOK with ANSI when _COLOR=1" {
+    _COLOR=1
+    result=$(echo "@@HOOK@@ hook info" | _color_sed)
+    [[ "$result" == *"[HOOK]"* ]]
+    [[ "$result" == *$'\033['* ]]
+}
+
+@test "_color_sed renders SUMMARY with ANSI when _COLOR=1" {
+    _COLOR=1
+    result=$(echo "@@SUMMARY@@ summary text" | _color_sed)
+    [[ "$result" == *"[SUMMARY]"* ]]
+    [[ "$result" == *$'\033['* ]]
+}

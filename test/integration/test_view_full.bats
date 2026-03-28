@@ -114,3 +114,104 @@ load '../test_helper/fixtures'
     # The offset output should be shorter (fewer messages rendered)
     [ "${#offset_output}" -lt "${#full_output}" ]
 }
+
+# ── compaction rendering ────────────────────────────────────────
+
+@test "view_agent_full renders compact_boundary as [COMPACT]" {
+    local filepath
+    filepath=$(create_session_with_compaction "myproject" "sess-compact1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent_full "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[COMPACT]"* ]]
+    [[ "$output" == *"Conversation compacted"* ]]
+    [[ "$output" == *"168134 tokens before"* ]]
+}
+
+@test "view_agent_full renders compaction summary as [SUMMARY]" {
+    local filepath
+    filepath=$(create_session_with_compaction "myproject" "sess-compact2")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent_full "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[SUMMARY]"* ]]
+    [[ "$output" == *"being continued"* ]]
+}
+
+@test "view_agent_full renders post-compaction messages" {
+    local filepath
+    filepath=$(create_session_with_compaction "myproject" "sess-compact3")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent_full "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"post-compaction message"* ]]
+    [[ "$output" == *"post-compaction response"* ]]
+}
+
+@test "view_agent_full renders microcompact_boundary as [COMPACT]" {
+    local filepath
+    filepath=$(create_session_with_microcompact "myproject" "sess-micro1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent_full "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[COMPACT]"* ]]
+    [[ "$output" == *"Context microcompacted"* ]]
+    [[ "$output" == *"saved 21368 tokens"* ]]
+}
+
+# ── hook rendering ──────────────────────────────────────────────
+
+@test "view_agent_full renders hook_progress as [HOOK]" {
+    local filepath
+    filepath=$(create_session_with_hooks "myproject" "sess-hooks1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent_full "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[HOOK]"* ]]
+    [[ "$output" == *"SessionStart:startup"* ]]
+}
+
+@test "view_agent_full filters out callback hooks" {
+    local filepath
+    filepath=$(create_session_with_hooks "myproject" "sess-hooks2")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent_full "$filepath"
+    [ "$status" -eq 0 ]
+    local hook_lines
+    hook_lines=$(echo "$output" | grep "\[HOOK\]" || true)
+    [[ "$hook_lines" != *"callback"* ]]
+}
+
+@test "view_agent_full renders stop_hook_summary" {
+    local filepath
+    filepath=$(create_session_with_hooks "myproject" "sess-hooks3")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent_full "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Stop hooks: 2 ran"* ]]
+}
+
+@test "view_agent_full renders stop_hook_summary with ERRORS" {
+    local filepath
+    filepath=$(create_session_with_hook_errors "myproject" "sess-hookerr1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent_full "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[ERRORS]"* ]]
+}

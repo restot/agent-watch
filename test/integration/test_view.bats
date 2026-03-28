@@ -199,3 +199,144 @@ load '../test_helper/fixtures'
     # Should contain ANSI escape sequences
     [[ "$output" == *$'\033['* ]]
 }
+
+# ── compaction rendering ────────────────────────────────────────
+
+@test "view_agent renders compact_boundary as [COMPACT]" {
+    local filepath
+    filepath=$(create_session_with_compaction "myproject" "sess-compact1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[COMPACT]"* ]]
+    [[ "$output" == *"Conversation compacted"* ]]
+    [[ "$output" == *"168134 tokens before"* ]]
+}
+
+@test "view_agent renders compaction summary as [SUMMARY] not [USER]" {
+    local filepath
+    filepath=$(create_session_with_compaction "myproject" "sess-compact2")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[SUMMARY]"* ]]
+    [[ "$output" == *"being continued"* ]]
+}
+
+@test "view_agent renders post-compaction messages" {
+    local filepath
+    filepath=$(create_session_with_compaction "myproject" "sess-compact3")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"post-compaction message"* ]]
+    [[ "$output" == *"post-compaction response"* ]]
+}
+
+@test "view_agent renders pre and post compaction messages together" {
+    local filepath
+    filepath=$(create_session_with_compaction "myproject" "sess-compact4")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"pre-compaction message"* ]]
+    [[ "$output" == *"[COMPACT]"* ]]
+    [[ "$output" == *"post-compaction message"* ]]
+}
+
+@test "view_agent renders microcompact_boundary as [COMPACT]" {
+    local filepath
+    filepath=$(create_session_with_microcompact "myproject" "sess-micro1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[COMPACT]"* ]]
+    [[ "$output" == *"Context microcompacted"* ]]
+    [[ "$output" == *"saved 21368 tokens"* ]]
+}
+
+# ── hook rendering ──────────────────────────────────────────────
+
+@test "view_agent renders hook_progress as [HOOK]" {
+    local filepath
+    filepath=$(create_session_with_hooks "myproject" "sess-hooks1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[HOOK]"* ]]
+    [[ "$output" == *"SessionStart:startup"* ]]
+}
+
+@test "view_agent renders PreToolUse hook" {
+    local filepath
+    filepath=$(create_session_with_hooks "myproject" "sess-hooks2")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PreToolUse:Read"* ]]
+    [[ "$output" == *"pre-tool-use.sh"* ]]
+}
+
+@test "view_agent filters out callback hook entries" {
+    local filepath
+    filepath=$(create_session_with_hooks "myproject" "sess-hooks3")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    # "callback" should not appear as a hook command
+    local hook_lines
+    hook_lines=$(echo "$output" | grep "\[HOOK\]" || true)
+    [[ "$hook_lines" != *"callback"* ]]
+}
+
+@test "view_agent renders stop_hook_summary as [HOOK]" {
+    local filepath
+    filepath=$(create_session_with_hooks "myproject" "sess-hooks4")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Stop hooks: 2 ran"* ]]
+}
+
+@test "view_agent renders stop_hook_summary with ERRORS flag" {
+    local filepath
+    filepath=$(create_session_with_hook_errors "myproject" "sess-hookerr1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[ERRORS]"* ]]
+}
+
+@test "view_agent with NO_COLOR renders COMPACT and HOOK as plain text" {
+    local filepath
+    filepath=$(create_session_with_compaction "myproject" "sess-nocolor-c")
+
+    _COLOR=0
+    _setup_colors
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[COMPACT]"* ]]
+    [[ "$output" == *"[SUMMARY]"* ]]
+    [[ "$output" != *$'\033['* ]]
+}

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+- **Compaction support** -- sessions that hit context limits now render correctly past compaction boundaries. `[COMPACT]` markers show when compaction occurred (auto/manual) and how many tokens were involved. Compaction summaries display as `[SUMMARY]` instead of `[USER]` so they're visually distinct from real user messages. Both full compaction (`compact_boundary`) and in-place microcompaction (`microcompact_boundary`) are supported.
+- **Hook visibility** -- hook executions are now rendered as `[HOOK]` entries showing the hook event, name, and script (e.g. `SessionStart:startup → session-start.sh`). Stop hook summaries show how many hooks ran and whether any errored. Synthetic `callback` entries are filtered out to reduce noise.
+- **New color tags** -- `[COMPACT]` (bold cyan), `[HOOK]` (dim yellow), `[SUMMARY]` (dim cyan) across all render paths: view, view full, watch, and fzf previews.
+- **28 new tests** -- unit, integration, and e2e coverage for compaction boundaries, microcompaction, hook progress, stop hook summaries, callback filtering, and error flags.
+
 ## 1.1.5
 
 - **Remove all content truncation** -- tool inputs, tool results, assistant text, and user text are no longer truncated in any render path (view, fzf preview). Previously tool inputs were cut at 200 chars, results at 100, and text at 300, which caused downstream consumers to miss Edit/Write content.

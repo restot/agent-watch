@@ -20,7 +20,7 @@ fi
 
 set -euo pipefail
 
-VERSION="1.1.5"
+VERSION="1.2.0"
 PROJECTS_DIR="$HOME/.claude/projects"
 DEBUG=0
 OFFSET=0
@@ -72,12 +72,18 @@ _color_sed() {
         sed $'s/@@USER@@/\033[0;32m[USER]\033[0m/g' | \
         sed $'s/@@ASST@@/\033[0;35m[ASST]\033[0m/g' | \
         sed $'s/@@TOOL@@ \\([^ ]*\\) @@TOOLEND@@/\033[0;34m[TOOL]\033[0m \033[0;33m\\1\033[0m/g' | \
-        sed $'s/@@RESULT@@/\033[2m[RESULT]/g'
+        sed $'s/@@RESULT@@/\033[2m[RESULT]/g' | \
+        sed $'s/@@COMPACT@@/\033[1;36m[COMPACT]\033[0m/g' | \
+        sed $'s/@@HOOK@@/\033[2;33m[HOOK]\033[0m/g' | \
+        sed $'s/@@SUMMARY@@/\033[2;36m[SUMMARY]\033[0m/g'
     else
         sed 's/@@USER@@/[USER]/g' | \
         sed 's/@@ASST@@/[ASST]/g' | \
         sed 's/@@TOOL@@ \([^ ]*\) @@TOOLEND@@/[TOOL] \1/g' | \
-        sed 's/@@RESULT@@/[RESULT]/g'
+        sed 's/@@RESULT@@/[RESULT]/g' | \
+        sed 's/@@COMPACT@@/[COMPACT]/g' | \
+        sed 's/@@HOOK@@/[HOOK]/g' | \
+        sed 's/@@SUMMARY@@/[SUMMARY]/g'
     fi
 }
 
@@ -87,12 +93,18 @@ _color_sed_u() {
         sed -u $'s/@@USER@@/\033[0;32m[USER]\033[0m/g' | \
         sed -u $'s/@@ASST@@/\033[0;35m[ASST]\033[0m/g' | \
         sed -u $'s/@@TOOL@@ \\([^ ]*\\) @@TOOLEND@@/\033[0;34m[TOOL]\033[0m \033[0;33m\\1\033[0m/g' | \
-        sed -u $'s/@@RESULT@@/\033[2m[RESULT]\033[0m/g'
+        sed -u $'s/@@RESULT@@/\033[2m[RESULT]\033[0m/g' | \
+        sed -u $'s/@@COMPACT@@/\033[1;36m[COMPACT]\033[0m/g' | \
+        sed -u $'s/@@HOOK@@/\033[2;33m[HOOK]\033[0m/g' | \
+        sed -u $'s/@@SUMMARY@@/\033[2;36m[SUMMARY]\033[0m/g'
     else
         sed -u 's/@@USER@@/[USER]/g' | \
         sed -u 's/@@ASST@@/[ASST]/g' | \
         sed -u 's/@@TOOL@@ \([^ ]*\) @@TOOLEND@@/[TOOL] \1/g' | \
-        sed -u 's/@@RESULT@@/[RESULT]/g'
+        sed -u 's/@@RESULT@@/[RESULT]/g' | \
+        sed -u 's/@@COMPACT@@/[COMPACT]/g' | \
+        sed -u 's/@@HOOK@@/[HOOK]/g' | \
+        sed -u 's/@@SUMMARY@@/[SUMMARY]/g'
     fi
 }
 
@@ -265,7 +277,11 @@ view_agent() {
         jq -r --arg mark "$mark" '
             (if $mark != "" then "@@MSG@@" else empty end),
             if .type == "user" then
-                "@@USER@@ " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+                if .isCompactSummary then
+                    "@@SUMMARY@@ " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+                else
+                    "@@USER@@ " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+                end
             elif .type == "assistant" then
                 (.message.content // [])[] |
                 if .type == "tool_use" then
@@ -277,6 +293,18 @@ view_agent() {
             elif .type == "tool_result" then
                 ((.content[0].text // .content // "") | tostring) as $res |
                 "@@RESULT@@ " + $res
+            elif .type == "system" and (.subtype == "compact_boundary" or .subtype == "microcompact_boundary") then
+                if .subtype == "compact_boundary" then
+                    "@@COMPACT@@ Conversation compacted (" + (.compactMetadata.trigger // "unknown") + ", " + ((.compactMetadata.preTokens // 0) | tostring) + " tokens before)"
+                else
+                    "@@COMPACT@@ Context microcompacted (" + (.microcompactMetadata.trigger // "auto") + ", saved " + ((.microcompactMetadata.tokensSaved // 0) | tostring) + " tokens)"
+                end
+            elif .type == "system" and .subtype == "stop_hook_summary" then
+                "@@HOOK@@ Stop hooks: " + ((.hookCount // 0) | tostring) + " ran" + (if ((.hookErrors // []) | length) > 0 then " [ERRORS]" else "" end)
+            elif .type == "progress" and .data.type == "hook_progress" then
+                if .data.command == "callback" then empty
+                else "@@HOOK@@ " + (.data.hookName // (.data.hookEvent // "")) + " \u2192 " + ((.data.command // "") | split("/") | last)
+                end
             else empty end
         ' 2>/dev/null | \
         if [[ -n "$workdir_escaped" ]]; then sed "s/$workdir_escaped\///g"; else cat; fi | \
@@ -378,7 +406,11 @@ view_agent_full() {
         jq -r --arg mark "$mark" '
             (if $mark != "" then "@@MSG@@" else empty end),
             if .type == "user" then
-                "@@USER@@ " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+                if .isCompactSummary then
+                    "@@SUMMARY@@ " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+                else
+                    "@@USER@@ " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+                end
             elif .type == "assistant" then
                 (.message.content // [])[] |
                 if .type == "tool_use" then
@@ -388,6 +420,18 @@ view_agent_full() {
                 else empty end
             elif .type == "tool_result" then
                 "@@RESULT@@", ((.content[0].text // .content // "") | tostring)
+            elif .type == "system" and (.subtype == "compact_boundary" or .subtype == "microcompact_boundary") then
+                if .subtype == "compact_boundary" then
+                    "@@COMPACT@@ Conversation compacted (" + (.compactMetadata.trigger // "unknown") + ", " + ((.compactMetadata.preTokens // 0) | tostring) + " tokens before)"
+                else
+                    "@@COMPACT@@ Context microcompacted (" + (.microcompactMetadata.trigger // "auto") + ", saved " + ((.microcompactMetadata.tokensSaved // 0) | tostring) + " tokens)"
+                end
+            elif .type == "system" and .subtype == "stop_hook_summary" then
+                "@@HOOK@@ Stop hooks: " + ((.hookCount // 0) | tostring) + " ran" + (if ((.hookErrors // []) | length) > 0 then " [ERRORS]" else "" end)
+            elif .type == "progress" and .data.type == "hook_progress" then
+                if .data.command == "callback" then empty
+                else "@@HOOK@@ " + (.data.hookName // (.data.hookEvent // "")) + " \u2192 " + ((.data.command // "") | split("/") | last)
+                end
             else empty end
         ' 2>/dev/null | \
         if [[ -n "$workdir_escaped" ]]; then sed "s/$workdir_escaped\///g"; else cat; fi | \
@@ -489,7 +533,11 @@ watch_agent() {
     debug " about to start tail -f"
     tail -n +1 -f "$filepath" 2>&1 | jq --unbuffered -r '
         if .type == "user" then
-            "@@USER@@ " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+            if .isCompactSummary then
+                "@@SUMMARY@@ " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+            else
+                "@@USER@@ " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+            end
         elif .type == "assistant" then
             (.message.content // [])[] |
             if .type == "tool_use" then
@@ -499,6 +547,18 @@ watch_agent() {
             else empty end
         elif .type == "tool_result" then
             "@@RESULT@@", ((.content[0].text // .content // "") | tostring)
+        elif .type == "system" and (.subtype == "compact_boundary" or .subtype == "microcompact_boundary") then
+            if .subtype == "compact_boundary" then
+                "@@COMPACT@@ Conversation compacted (" + (.compactMetadata.trigger // "unknown") + ", " + ((.compactMetadata.preTokens // 0) | tostring) + " tokens before)"
+            else
+                "@@COMPACT@@ Context microcompacted (" + (.microcompactMetadata.trigger // "auto") + ", saved " + ((.microcompactMetadata.tokensSaved // 0) | tostring) + " tokens)"
+            end
+        elif .type == "system" and .subtype == "stop_hook_summary" then
+            "@@HOOK@@ Stop hooks: " + ((.hookCount // 0) | tostring) + " ran" + (if ((.hookErrors // []) | length) > 0 then " [ERRORS]" else "" end)
+        elif .type == "progress" and .data.type == "hook_progress" then
+            if .data.command == "callback" then empty
+            else "@@HOOK@@ " + (.data.hookName // (.data.hookEvent // "")) + " \u2192 " + ((.data.command // "") | split("/") | last)
+            end
         else empty end
     ' 2>/dev/null | \
     { if [[ -n "$workdir_escaped" ]]; then sed -u "s/$workdir_escaped\///g"; else cat; fi; } | \
@@ -601,7 +661,11 @@ echo -e "\033[2m─────────────────────�
 echo ""
 head -30 "$f" 2>/dev/null | jq -r '
     if .type == "user" then
-        "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+        if .isCompactSummary then
+            "\u001b[2;36m[SUMMARY]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+        else
+            "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+        end
     elif .type == "assistant" then
         (.message.content // [])[] |
         if .type == "text" then
@@ -609,6 +673,12 @@ head -30 "$f" 2>/dev/null | jq -r '
         elif .type == "tool_use" then
             "\u001b[0;34m[TOOL]\u001b[0m \u001b[0;33m" + .name + "\u001b[0m " + (.input | tostring)
         else empty end
+    elif .type == "system" and (.subtype == "compact_boundary" or .subtype == "microcompact_boundary") then
+        "\u001b[1;36m[COMPACT]\u001b[0m " + (.content // "")
+    elif .type == "progress" and .data.type == "hook_progress" then
+        if .data.command == "callback" then empty
+        else "\u001b[2;33m[HOOK]\u001b[0m " + (.data.hookName // "") + " \u2192 " + ((.data.command // "") | split("/") | last)
+        end
     else empty end
 ' 2>/dev/null
 PREVIEW_SCRIPT
@@ -830,7 +900,11 @@ echo -e "\033[2m─────────────────────�
 echo ""
 head -30 "$f" 2>/dev/null | jq -r '
     if .type == "user" then
-        "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+        if .isCompactSummary then
+            "\u001b[2;36m[SUMMARY]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+        else
+            "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+        end
     elif .type == "assistant" then
         (.message.content // [])[] |
         if .type == "text" then
@@ -838,6 +912,12 @@ head -30 "$f" 2>/dev/null | jq -r '
         elif .type == "tool_use" then
             "\u001b[0;34m[TOOL]\u001b[0m \u001b[0;33m" + .name + "\u001b[0m " + (.input | tostring)
         else empty end
+    elif .type == "system" and (.subtype == "compact_boundary" or .subtype == "microcompact_boundary") then
+        "\u001b[1;36m[COMPACT]\u001b[0m " + (.content // "")
+    elif .type == "progress" and .data.type == "hook_progress" then
+        if .data.command == "callback" then empty
+        else "\u001b[2;33m[HOOK]\u001b[0m " + (.data.hookName // "") + " \u2192 " + ((.data.command // "") | split("/") | last)
+        end
     else empty end
 ' 2>/dev/null
 PREVIEW_SCRIPT

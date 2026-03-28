@@ -110,3 +110,28 @@ teardown() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"No agent or session found"* ]]
 }
+
+@test "agent-watch session with compaction shows [COMPACT] and [SUMMARY]" {
+    create_session_with_compaction "test-project" "sess-compact-e2e" >/dev/null
+    run env HOME="$FAKE_HOME" "$AW" session --limit 5000 sess-compact-e2e
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[COMPACT]"* ]]
+    [[ "$output" == *"[SUMMARY]"* ]]
+    [[ "$output" == *"post-compaction message"* ]]
+}
+
+@test "agent-watch session with hooks shows [HOOK]" {
+    create_session_with_hooks "test-project" "sess-hooks-e2e" >/dev/null
+    run env HOME="$FAKE_HOME" "$AW" session --limit 5000 sess-hooks-e2e
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[HOOK]"* ]]
+    [[ "$output" == *"SessionStart:startup"* ]]
+}
+
+@test "agent-watch session with microcompact shows [COMPACT] with tokens saved" {
+    create_session_with_microcompact "test-project" "sess-micro-e2e" >/dev/null
+    run env HOME="$FAKE_HOME" "$AW" session --limit 5000 sess-micro-e2e
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[COMPACT]"* ]]
+    [[ "$output" == *"saved 21368 tokens"* ]]
+}
