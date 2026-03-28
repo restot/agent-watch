@@ -215,3 +215,16 @@ load '../test_helper/common'
     [[ "$result" == *"[SUMMARY]"* ]]
     [[ "$result" == *$'\033['* ]]
 }
+
+@test "_color_sed renders SYSTEM plain text when _COLOR=0" {
+    _COLOR=0
+    result=$(echo "@@SYSTEM@@ turn_duration: Turn took 5s" | _color_sed)
+    [[ "$result" == "[SYSTEM] turn_duration: Turn took 5s" ]]
+}
+
+@test "_color_sed renders SYSTEM with ANSI when _COLOR=1" {
+    _COLOR=1
+    result=$(echo "@@SYSTEM@@ turn_duration" | _color_sed)
+    [[ "$result" == *"[SYSTEM]"* ]]
+    [[ "$result" == *$'\033['* ]]
+}

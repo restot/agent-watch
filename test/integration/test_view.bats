@@ -305,7 +305,7 @@ load '../test_helper/fixtures'
     [[ "$hook_lines" != *"callback"* ]]
 }
 
-@test "view_agent renders stop_hook_summary as [HOOK]" {
+@test "view_agent renders stop_hook_summary as [HOOK] with command and duration" {
     local filepath
     filepath=$(create_session_with_hooks "myproject" "sess-hooks4")
 
@@ -313,7 +313,7 @@ load '../test_helper/fixtures'
     LIMIT=5000
     run view_agent "$filepath"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Stop hooks: 2 ran"* ]]
+    [[ "$output" == *"[HOOK]"*"stop.sh"*"150ms"* ]]
 }
 
 @test "view_agent renders stop_hook_summary with ERRORS flag" {
@@ -325,6 +325,36 @@ load '../test_helper/fixtures'
     run view_agent "$filepath"
     [ "$status" -eq 0 ]
     [[ "$output" == *"[ERRORS]"* ]]
+}
+
+@test "view_agent renders generic system entries as [SYSTEM]" {
+    local filepath
+    filepath=$(create_session_with_system_entries "myproject" "sess-sys1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[SYSTEM]"* ]]
+    [[ "$output" == *"turn_duration"* ]]
+}
+
+@test "view_agent renders all progress types as [HOOK]" {
+    local dir="$PROJECTS_DIR/-${_HOME_PATTERN}-myproject"
+    mkdir -p "$dir"
+    local filepath="${dir}/sess-prog1.jsonl"
+    : > "$filepath"
+
+    echo '{"type":"user","sessionId":"sess-prog1","cwd":"'"${HOME}/myproject"'","version":"2.1.86","gitBranch":"main","timestamp":"2026-03-28T18:00:00.000Z","message":{"role":"user","content":"hello"}}' >> "$filepath"
+    echo '{"type":"progress","data":{"type":"bash_progress"},"timestamp":"2026-03-28T18:00:01.000Z","uuid":"bp-001"}' >> "$filepath"
+    echo '{"type":"progress","data":{"type":"agent_progress"},"timestamp":"2026-03-28T18:00:02.000Z","uuid":"ap-001"}' >> "$filepath"
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[HOOK]"*"bash_progress"* ]]
+    [[ "$output" == *"[HOOK]"*"agent_progress"* ]]
 }
 
 @test "view_agent with NO_COLOR renders COMPACT and HOOK as plain text" {

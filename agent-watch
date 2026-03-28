@@ -75,7 +75,8 @@ _color_sed() {
         sed $'s/@@RESULT@@/\033[2m[RESULT]/g' | \
         sed $'s/@@COMPACT@@/\033[1;36m[COMPACT]\033[0m/g' | \
         sed $'s/@@HOOK@@/\033[2;33m[HOOK]\033[0m/g' | \
-        sed $'s/@@SUMMARY@@/\033[2;36m[SUMMARY]\033[0m/g'
+        sed $'s/@@SUMMARY@@/\033[2;36m[SUMMARY]\033[0m/g' | \
+        sed $'s/@@SYSTEM@@/\033[2m[SYSTEM]\033[0m/g'
     else
         sed 's/@@USER@@/[USER]/g' | \
         sed 's/@@ASST@@/[ASST]/g' | \
@@ -83,7 +84,8 @@ _color_sed() {
         sed 's/@@RESULT@@/[RESULT]/g' | \
         sed 's/@@COMPACT@@/[COMPACT]/g' | \
         sed 's/@@HOOK@@/[HOOK]/g' | \
-        sed 's/@@SUMMARY@@/[SUMMARY]/g'
+        sed 's/@@SUMMARY@@/[SUMMARY]/g' | \
+        sed 's/@@SYSTEM@@/[SYSTEM]/g'
     fi
 }
 
@@ -96,7 +98,8 @@ _color_sed_u() {
         sed -u $'s/@@RESULT@@/\033[2m[RESULT]\033[0m/g' | \
         sed -u $'s/@@COMPACT@@/\033[1;36m[COMPACT]\033[0m/g' | \
         sed -u $'s/@@HOOK@@/\033[2;33m[HOOK]\033[0m/g' | \
-        sed -u $'s/@@SUMMARY@@/\033[2;36m[SUMMARY]\033[0m/g'
+        sed -u $'s/@@SUMMARY@@/\033[2;36m[SUMMARY]\033[0m/g' | \
+        sed -u $'s/@@SYSTEM@@/\033[2m[SYSTEM]\033[0m/g'
     else
         sed -u 's/@@USER@@/[USER]/g' | \
         sed -u 's/@@ASST@@/[ASST]/g' | \
@@ -104,7 +107,8 @@ _color_sed_u() {
         sed -u 's/@@RESULT@@/[RESULT]/g' | \
         sed -u 's/@@COMPACT@@/[COMPACT]/g' | \
         sed -u 's/@@HOOK@@/[HOOK]/g' | \
-        sed -u 's/@@SUMMARY@@/[SUMMARY]/g'
+        sed -u 's/@@SUMMARY@@/[SUMMARY]/g' | \
+        sed -u 's/@@SYSTEM@@/[SYSTEM]/g'
     fi
 }
 
@@ -293,17 +297,23 @@ view_agent() {
             elif .type == "tool_result" then
                 ((.content[0].text // .content // "") | tostring) as $res |
                 "@@RESULT@@ " + $res
-            elif .type == "system" and (.subtype == "compact_boundary" or .subtype == "microcompact_boundary") then
+            elif .type == "system" then
                 if .subtype == "compact_boundary" then
                     "@@COMPACT@@ Conversation compacted (" + (.compactMetadata.trigger // "unknown") + ", " + ((.compactMetadata.preTokens // 0) | tostring) + " tokens before)"
-                else
+                elif .subtype == "microcompact_boundary" then
                     "@@COMPACT@@ Context microcompacted (" + (.microcompactMetadata.trigger // "auto") + ", saved " + ((.microcompactMetadata.tokensSaved // 0) | tostring) + " tokens)"
+                elif ((.hookInfos // []) | length) > 0 then
+                    ((.hookInfos // [])[] | "@@HOOK@@ " + ((.command // "") | split("/") | .[-3:] | join("/")) + " (" + ((.durationMs // 0) | tostring) + "ms)"),
+                    (if ((.hookErrors // []) | length) > 0 then "@@HOOK@@ [ERRORS]: " + ((.hookErrors // []) | join(", ")) else empty end)
+                else
+                    "@@SYSTEM@@ " + (.subtype // "system") + (if .content then ": " + (.content | tostring) else "" end)
                 end
-            elif .type == "system" and .subtype == "stop_hook_summary" then
-                "@@HOOK@@ Stop hooks: " + ((.hookCount // 0) | tostring) + " ran" + (if ((.hookErrors // []) | length) > 0 then " [ERRORS]" else "" end)
-            elif .type == "progress" and .data.type == "hook_progress" then
+            elif .type == "progress" then
                 if .data.command == "callback" then empty
-                else "@@HOOK@@ " + (.data.hookName // (.data.hookEvent // "")) + " \u2192 " + ((.data.command // "") | split("/") | last)
+                elif .data.hookName then
+                    "@@HOOK@@ " + .data.hookName + " \u2192 " + ((.data.command // "") | split("/") | last)
+                else
+                    "@@HOOK@@ " + (.data.type // "progress")
                 end
             else empty end
         ' 2>/dev/null | \
@@ -420,17 +430,23 @@ view_agent_full() {
                 else empty end
             elif .type == "tool_result" then
                 "@@RESULT@@", ((.content[0].text // .content // "") | tostring)
-            elif .type == "system" and (.subtype == "compact_boundary" or .subtype == "microcompact_boundary") then
+            elif .type == "system" then
                 if .subtype == "compact_boundary" then
                     "@@COMPACT@@ Conversation compacted (" + (.compactMetadata.trigger // "unknown") + ", " + ((.compactMetadata.preTokens // 0) | tostring) + " tokens before)"
-                else
+                elif .subtype == "microcompact_boundary" then
                     "@@COMPACT@@ Context microcompacted (" + (.microcompactMetadata.trigger // "auto") + ", saved " + ((.microcompactMetadata.tokensSaved // 0) | tostring) + " tokens)"
+                elif ((.hookInfos // []) | length) > 0 then
+                    ((.hookInfos // [])[] | "@@HOOK@@ " + ((.command // "") | split("/") | .[-3:] | join("/")) + " (" + ((.durationMs // 0) | tostring) + "ms)"),
+                    (if ((.hookErrors // []) | length) > 0 then "@@HOOK@@ [ERRORS]: " + ((.hookErrors // []) | join(", ")) else empty end)
+                else
+                    "@@SYSTEM@@ " + (.subtype // "system") + (if .content then ": " + (.content | tostring) else "" end)
                 end
-            elif .type == "system" and .subtype == "stop_hook_summary" then
-                "@@HOOK@@ Stop hooks: " + ((.hookCount // 0) | tostring) + " ran" + (if ((.hookErrors // []) | length) > 0 then " [ERRORS]" else "" end)
-            elif .type == "progress" and .data.type == "hook_progress" then
+            elif .type == "progress" then
                 if .data.command == "callback" then empty
-                else "@@HOOK@@ " + (.data.hookName // (.data.hookEvent // "")) + " \u2192 " + ((.data.command // "") | split("/") | last)
+                elif .data.hookName then
+                    "@@HOOK@@ " + .data.hookName + " \u2192 " + ((.data.command // "") | split("/") | last)
+                else
+                    "@@HOOK@@ " + (.data.type // "progress")
                 end
             else empty end
         ' 2>/dev/null | \
@@ -547,17 +563,23 @@ watch_agent() {
             else empty end
         elif .type == "tool_result" then
             "@@RESULT@@", ((.content[0].text // .content // "") | tostring)
-        elif .type == "system" and (.subtype == "compact_boundary" or .subtype == "microcompact_boundary") then
+        elif .type == "system" then
             if .subtype == "compact_boundary" then
                 "@@COMPACT@@ Conversation compacted (" + (.compactMetadata.trigger // "unknown") + ", " + ((.compactMetadata.preTokens // 0) | tostring) + " tokens before)"
-            else
+            elif .subtype == "microcompact_boundary" then
                 "@@COMPACT@@ Context microcompacted (" + (.microcompactMetadata.trigger // "auto") + ", saved " + ((.microcompactMetadata.tokensSaved // 0) | tostring) + " tokens)"
+            elif ((.hookInfos // []) | length) > 0 then
+                ((.hookInfos // [])[] | "@@HOOK@@ " + ((.command // "") | split("/") | .[-3:] | join("/")) + " (" + ((.durationMs // 0) | tostring) + "ms)"),
+                (if ((.hookErrors // []) | length) > 0 then "@@HOOK@@ [ERRORS]: " + ((.hookErrors // []) | join(", ")) else empty end)
+            else
+                "@@SYSTEM@@ " + (.subtype // "system") + (if .content then ": " + (.content | tostring) else "" end)
             end
-        elif .type == "system" and .subtype == "stop_hook_summary" then
-            "@@HOOK@@ Stop hooks: " + ((.hookCount // 0) | tostring) + " ran" + (if ((.hookErrors // []) | length) > 0 then " [ERRORS]" else "" end)
-        elif .type == "progress" and .data.type == "hook_progress" then
+        elif .type == "progress" then
             if .data.command == "callback" then empty
-            else "@@HOOK@@ " + (.data.hookName // (.data.hookEvent // "")) + " \u2192 " + ((.data.command // "") | split("/") | last)
+            elif .data.hookName then
+                "@@HOOK@@ " + .data.hookName + " \u2192 " + ((.data.command // "") | split("/") | last)
+            else
+                "@@HOOK@@ " + (.data.type // "progress")
             end
         else empty end
     ' 2>/dev/null | \
@@ -673,11 +695,20 @@ head -30 "$f" 2>/dev/null | jq -r '
         elif .type == "tool_use" then
             "\u001b[0;34m[TOOL]\u001b[0m \u001b[0;33m" + .name + "\u001b[0m " + (.input | tostring)
         else empty end
-    elif .type == "system" and (.subtype == "compact_boundary" or .subtype == "microcompact_boundary") then
-        "\u001b[1;36m[COMPACT]\u001b[0m " + (.content // "")
-    elif .type == "progress" and .data.type == "hook_progress" then
+    elif .type == "system" then
+        if .subtype == "compact_boundary" or .subtype == "microcompact_boundary" then
+            "\u001b[1;36m[COMPACT]\u001b[0m " + (.content // "")
+        elif ((.hookInfos // []) | length) > 0 then
+            (.hookInfos[] | "\u001b[2;33m[HOOK]\u001b[0m " + ((.command // "") | split("/") | .[-3:] | join("/")) + " (" + ((.durationMs // 0) | tostring) + "ms)")
+        else
+            "\u001b[2m[SYSTEM]\u001b[0m " + (.subtype // "system") + (if .content then ": " + (.content | tostring) else "" end)
+        end
+    elif .type == "progress" then
         if .data.command == "callback" then empty
-        else "\u001b[2;33m[HOOK]\u001b[0m " + (.data.hookName // "") + " \u2192 " + ((.data.command // "") | split("/") | last)
+        elif .data.hookName then
+            "\u001b[2;33m[HOOK]\u001b[0m " + .data.hookName + " \u2192 " + ((.data.command // "") | split("/") | last)
+        else
+            "\u001b[2;33m[HOOK]\u001b[0m " + (.data.type // "progress")
         end
     else empty end
 ' 2>/dev/null
@@ -912,11 +943,20 @@ head -30 "$f" 2>/dev/null | jq -r '
         elif .type == "tool_use" then
             "\u001b[0;34m[TOOL]\u001b[0m \u001b[0;33m" + .name + "\u001b[0m " + (.input | tostring)
         else empty end
-    elif .type == "system" and (.subtype == "compact_boundary" or .subtype == "microcompact_boundary") then
-        "\u001b[1;36m[COMPACT]\u001b[0m " + (.content // "")
-    elif .type == "progress" and .data.type == "hook_progress" then
+    elif .type == "system" then
+        if .subtype == "compact_boundary" or .subtype == "microcompact_boundary" then
+            "\u001b[1;36m[COMPACT]\u001b[0m " + (.content // "")
+        elif ((.hookInfos // []) | length) > 0 then
+            (.hookInfos[] | "\u001b[2;33m[HOOK]\u001b[0m " + ((.command // "") | split("/") | .[-3:] | join("/")) + " (" + ((.durationMs // 0) | tostring) + "ms)")
+        else
+            "\u001b[2m[SYSTEM]\u001b[0m " + (.subtype // "system") + (if .content then ": " + (.content | tostring) else "" end)
+        end
+    elif .type == "progress" then
         if .data.command == "callback" then empty
-        else "\u001b[2;33m[HOOK]\u001b[0m " + (.data.hookName // "") + " \u2192 " + ((.data.command // "") | split("/") | last)
+        elif .data.hookName then
+            "\u001b[2;33m[HOOK]\u001b[0m " + .data.hookName + " \u2192 " + ((.data.command // "") | split("/") | last)
+        else
+            "\u001b[2;33m[HOOK]\u001b[0m " + (.data.type // "progress")
         end
     else empty end
 ' 2>/dev/null

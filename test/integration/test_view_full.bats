@@ -194,7 +194,7 @@ load '../test_helper/fixtures'
     [[ "$hook_lines" != *"callback"* ]]
 }
 
-@test "view_agent_full renders stop_hook_summary" {
+@test "view_agent_full renders stop_hook_summary with command and duration" {
     local filepath
     filepath=$(create_session_with_hooks "myproject" "sess-hooks3")
 
@@ -202,7 +202,7 @@ load '../test_helper/fixtures'
     LIMIT=5000
     run view_agent_full "$filepath"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Stop hooks: 2 ran"* ]]
+    [[ "$output" == *"[HOOK]"*"stop.sh"*"150ms"* ]]
 }
 
 @test "view_agent_full renders stop_hook_summary with ERRORS" {
@@ -214,4 +214,16 @@ load '../test_helper/fixtures'
     run view_agent_full "$filepath"
     [ "$status" -eq 0 ]
     [[ "$output" == *"[ERRORS]"* ]]
+}
+
+@test "view_agent_full renders generic system entries as [SYSTEM]" {
+    local filepath
+    filepath=$(create_session_with_system_entries "myproject" "sess-sys1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent_full "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[SYSTEM]"* ]]
+    [[ "$output" == *"turn_duration"* ]]
 }

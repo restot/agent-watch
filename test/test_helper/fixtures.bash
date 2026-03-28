@@ -234,3 +234,25 @@ create_session_with_hook_errors() {
 
     echo "$filepath"
 }
+
+# create_session_with_system_entries "project-name" "session-id"
+# Creates a session with generic system entries (turn_duration, etc.).
+# Echoes the filepath.
+create_session_with_system_entries() {
+    local project="$1"
+    local session_id="$2"
+
+    local dir="$PROJECTS_DIR/-${_HOME_PATTERN}-${project}"
+    mkdir -p "$dir"
+
+    local filepath="${dir}/${session_id}.jsonl"
+    : > "$filepath"
+
+    echo '{"type":"user","sessionId":"'"${session_id}"'","cwd":"'"${HOME}/${project}"'","version":"2.1.86","gitBranch":"main","timestamp":"2026-03-28T18:00:00.000Z","message":{"role":"user","content":"hello"}}' >> "$filepath"
+
+    echo '{"type":"system","subtype":"turn_duration","content":"Turn took 5.2s","timestamp":"2026-03-28T18:00:01.000Z","uuid":"td-001"}' >> "$filepath"
+
+    echo '{"type":"assistant","timestamp":"2026-03-28T18:00:02.000Z","message":{"role":"assistant","model":"claude-opus-4-6","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":100,"output_tokens":50}}}' >> "$filepath"
+
+    echo "$filepath"
+}
