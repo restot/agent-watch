@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1
+
+- **Data-driven rendering** -- system and progress entries are rendered based on their data fields, not hardcoded subtypes. Any system entry with `hookInfos` shows each hook command and duration as `[HOOK]`. Other system entries render as `[SYSTEM]` with subtype and content. All progress entries render as `[HOOK]` with available metadata. Future Claude Code entry types will render automatically.
+
 ## 1.2.0
 
 - **Compaction support** -- sessions that hit context limits now render correctly past compaction boundaries. `[COMPACT]` markers show when compaction occurred (auto/manual) and how many tokens were involved. Compaction summaries display as `[SUMMARY]` instead of `[USER]` so they're visually distinct from real user messages. Both full compaction (`compact_boundary`) and in-place microcompaction (`microcompact_boundary`) are supported.
