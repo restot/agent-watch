@@ -1146,6 +1146,12 @@ All views display a metadata header:
   Model, Version, Branch, Project, Started/Ended, Messages, Tokens
   Sub-agents also show Slug; Permission shown when available.
 
+Message markers:
+  [USER]     User messages          [TOOL]     Tool calls (name + input)
+  [ASST]     Assistant responses    [RESULT]   Tool results
+  [COMPACT]  Compaction boundary    [SUMMARY]  Post-compaction summary
+  [HOOK]     Hook execution         (callbacks are filtered out)
+
 Pagination (for large sessions/agents):
   --limit N           Token budget (chars/4); prints NEXT_OFFSET=M when exceeded
   --offset N          Skip first N messages (combine with --limit to paginate)

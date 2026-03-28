@@ -32,9 +32,19 @@ Navigate large sessions without loading everything into memory. `--limit` sets a
 
 Non-interactive commands (`list`, `list-sessions`, `view`, `session`, `wait`) are safe for use by Claude Code agents themselves -- no TTY required.
 
+### Compaction & Hook Rendering
+
+Sessions that hit context limits are compacted by Claude Code, which previously made the rest of the conversation invisible. agent-watch now renders these boundaries:
+
+- `[COMPACT]` -- marks where compaction occurred (auto/manual, token count)
+- `[SUMMARY]` -- the AI-generated summary injected after compaction (distinct from `[USER]`)
+- `[HOOK]` -- hook executions showing event, name, and script (e.g. `SessionStart:startup → session-start.sh`)
+
+Both full compaction and in-place microcompaction are supported. Synthetic callback entries are filtered out.
+
 ### Live Tailing
 
-Stream agent output in real-time with colorized role markers (`[USER]`, `[ASST]`, `[TOOL]`, `[RESULT]`).
+Stream agent output in real-time with colorized role markers (`[USER]`, `[ASST]`, `[TOOL]`, `[RESULT]`, `[COMPACT]`, `[HOOK]`, `[SUMMARY]`).
 
 ## Installation
 
@@ -98,6 +108,12 @@ Interactive commands (require TTY):
 All views display a metadata header:
   Model, Version, Branch, Project, Started/Ended, Messages, Tokens
   Sub-agents also show Slug; Permission shown when available.
+
+Message markers:
+  [USER]     User messages          [TOOL]     Tool calls (name + input)
+  [ASST]     Assistant responses    [RESULT]   Tool results
+  [COMPACT]  Compaction boundary    [SUMMARY]  Post-compaction summary
+  [HOOK]     Hook execution         (callbacks are filtered out)
 
 Pagination (for large sessions/agents):
   --limit N           Token budget (chars/4); prints NEXT_OFFSET=M when exceeded
@@ -219,7 +235,9 @@ agent-watch watch
 
 agent-watch reads Claude Code's JSONL session and agent files from `~/.claude/projects/`. It parses metadata from the first few entries in each file (model, version, branch, timestamps) and aggregates token usage across all assistant entries.
 
-JSON parsing is handled by jq. Interactive selection uses fzf with preview windows that show session metadata and recent messages. Output is colorized with role-based markers (`[USER]`, `[ASST]`, `[TOOL]`, `[RESULT]`) for readability. Color can be disabled via `NO_COLOR=1` or `--no-color` to reduce token overhead when output is consumed by agents.
+JSON parsing is handled by jq. Interactive selection uses fzf with preview windows that show session metadata and recent messages. Output is colorized with role-based markers (`[USER]`, `[ASST]`, `[TOOL]`, `[RESULT]`, `[COMPACT]`, `[HOOK]`, `[SUMMARY]`) for readability. Color can be disabled via `NO_COLOR=1` or `--no-color` to reduce token overhead when output is consumed by agents.
+
+Compaction boundaries (`compact_boundary`, `microcompact_boundary`) and hook progress entries (`hook_progress`, `stop_hook_summary`) are parsed from the JSONL and rendered inline. Synthetic callback entries are filtered out to reduce noise.
 
 </details>
 
