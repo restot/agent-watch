@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.2
+
+- **FileChanged hook visibility** -- `queue-operation` enqueue entries (used by Claude Code for FileChanged hooks) now render as `[HOOK] enqueue: ...` showing the injected content. Dequeue entries are skipped to reduce noise.
+
 ## 1.2.1
 
 - **Data-driven rendering** -- system and progress entries are rendered based on their data fields, not hardcoded subtypes. Any system entry with `hookInfos` shows each hook command and duration as `[HOOK]`. Other system entries render as `[SYSTEM]` with subtype and content. All progress entries render as `[HOOK]` with available metadata. Future Claude Code entry types will render automatically.

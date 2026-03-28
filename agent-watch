@@ -20,7 +20,7 @@ fi
 
 set -euo pipefail
 
-VERSION="1.2.1"
+VERSION="1.2.2"
 PROJECTS_DIR="$HOME/.claude/projects"
 DEBUG=0
 OFFSET=0
@@ -315,6 +315,8 @@ view_agent() {
                 else
                     "@@HOOK@@ " + (.data.type // "progress")
                 end
+            elif .type == "queue-operation" and .operation == "enqueue" and .content then
+                "@@HOOK@@ enqueue: " + .content
             else empty end
         ' 2>/dev/null | \
         if [[ -n "$workdir_escaped" ]]; then sed "s/$workdir_escaped\///g"; else cat; fi | \
@@ -448,6 +450,8 @@ view_agent_full() {
                 else
                     "@@HOOK@@ " + (.data.type // "progress")
                 end
+            elif .type == "queue-operation" and .operation == "enqueue" and .content then
+                "@@HOOK@@ enqueue: " + .content
             else empty end
         ' 2>/dev/null | \
         if [[ -n "$workdir_escaped" ]]; then sed "s/$workdir_escaped\///g"; else cat; fi | \
@@ -581,6 +585,8 @@ watch_agent() {
             else
                 "@@HOOK@@ " + (.data.type // "progress")
             end
+        elif .type == "queue-operation" and .operation == "enqueue" and .content then
+            "@@HOOK@@ enqueue: " + .content
         else empty end
     ' 2>/dev/null | \
     { if [[ -n "$workdir_escaped" ]]; then sed -u "s/$workdir_escaped\///g"; else cat; fi; } | \
