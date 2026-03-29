@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.3
+
+- **Enqueue initiator extraction** -- queue-operation enqueue entries now show a concise initiator instead of raw XML content. Task notifications display the summary (e.g. `Agent "Code review" completed`), teammate messages show the sender and summary (e.g. `bootstrap: build finished`), FileChanged hooks display as `FileChanged`, and plain-text queued input shows the first 80 characters.
+
 ## 1.2.2
 
 - **FileChanged hook visibility** -- `queue-operation` enqueue entries (used by Claude Code for FileChanged hooks) now render as `[HOOK] enqueue: ...` showing the injected content. Dequeue entries are skipped to reduce noise.

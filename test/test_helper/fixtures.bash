@@ -256,3 +256,93 @@ create_session_with_system_entries() {
 
     echo "$filepath"
 }
+
+# create_session_with_queue_ops "project-name" "session-id"
+# Creates a session with queue-operation enqueue/dequeue entries (FileChanged hooks).
+# Echoes the filepath.
+create_session_with_queue_ops() {
+    local project="$1"
+    local session_id="$2"
+
+    local dir="$PROJECTS_DIR/-${_HOME_PATTERN}-${project}"
+    mkdir -p "$dir"
+
+    local filepath="${dir}/${session_id}.jsonl"
+    : > "$filepath"
+
+    echo '{"type":"queue-operation","operation":"enqueue","timestamp":"2026-03-28T23:41:28.000Z","sessionId":"'"${session_id}"'","content":"<system-reminder>\nFileChanged hook triggered\n</system-reminder>"}' >> "$filepath"
+
+    echo '{"type":"queue-operation","operation":"dequeue","timestamp":"2026-03-28T23:41:28.100Z","sessionId":"'"${session_id}"'"}' >> "$filepath"
+
+    echo '{"type":"user","sessionId":"'"${session_id}"'","cwd":"'"${HOME}/${project}"'","version":"2.1.86","gitBranch":"main","timestamp":"2026-03-28T23:41:29.000Z","message":{"role":"user","content":"<system-reminder>\nFileChanged hook triggered\n</system-reminder>"}}' >> "$filepath"
+
+    echo '{"type":"assistant","timestamp":"2026-03-28T23:41:30.000Z","message":{"role":"assistant","model":"claude-opus-4-6","content":[{"type":"text","text":"acknowledged"}],"usage":{"input_tokens":100,"output_tokens":50}}}' >> "$filepath"
+
+    echo "$filepath"
+}
+
+# create_session_with_task_enqueue "project-name" "session-id"
+# Creates a session with a task-notification enqueue entry.
+# Echoes the filepath.
+create_session_with_task_enqueue() {
+    local project="$1"
+    local session_id="$2"
+
+    local dir="$PROJECTS_DIR/-${_HOME_PATTERN}-${project}"
+    mkdir -p "$dir"
+
+    local filepath="${dir}/${session_id}.jsonl"
+    : > "$filepath"
+
+    echo '{"type":"queue-operation","operation":"enqueue","timestamp":"2026-03-28T23:50:00.000Z","sessionId":"'"${session_id}"'","content":"<task-notification>\n<task-id>abc123</task-id>\n<status>completed</status>\n<summary>Agent \"Code review\" completed</summary>\n<result>All good</result>\n</task-notification>"}' >> "$filepath"
+
+    echo '{"type":"user","sessionId":"'"${session_id}"'","cwd":"'"${HOME}/${project}"'","version":"2.1.86","gitBranch":"main","timestamp":"2026-03-28T23:50:01.000Z","message":{"role":"user","content":"hello"}}' >> "$filepath"
+
+    echo '{"type":"assistant","timestamp":"2026-03-28T23:50:02.000Z","message":{"role":"assistant","model":"claude-opus-4-6","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":100,"output_tokens":50}}}' >> "$filepath"
+
+    echo "$filepath"
+}
+
+# create_session_with_teammate_enqueue "project-name" "session-id"
+# Creates a session with a teammate-message enqueue entry.
+# Echoes the filepath.
+create_session_with_teammate_enqueue() {
+    local project="$1"
+    local session_id="$2"
+
+    local dir="$PROJECTS_DIR/-${_HOME_PATTERN}-${project}"
+    mkdir -p "$dir"
+
+    local filepath="${dir}/${session_id}.jsonl"
+    : > "$filepath"
+
+    echo '{"type":"queue-operation","operation":"enqueue","timestamp":"2026-03-28T23:55:00.000Z","sessionId":"'"${session_id}"'","content":"<system-reminder>\nStop hook blocking error from command \"FileChanged\": <teammate-message teammate_id=\"agent1\" summary=\"build finished\"> </teammate-message>\n</system-reminder>"}' >> "$filepath"
+
+    echo '{"type":"user","sessionId":"'"${session_id}"'","cwd":"'"${HOME}/${project}"'","version":"2.1.86","gitBranch":"main","timestamp":"2026-03-28T23:55:01.000Z","message":{"role":"user","content":"hello"}}' >> "$filepath"
+
+    echo '{"type":"assistant","timestamp":"2026-03-28T23:55:02.000Z","message":{"role":"assistant","model":"claude-opus-4-6","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":100,"output_tokens":50}}}' >> "$filepath"
+
+    echo "$filepath"
+}
+
+# create_session_with_plain_enqueue "project-name" "session-id"
+# Creates a session with a plain-text enqueue entry (user queued input).
+# Echoes the filepath.
+create_session_with_plain_enqueue() {
+    local project="$1"
+    local session_id="$2"
+
+    local dir="$PROJECTS_DIR/-${_HOME_PATTERN}-${project}"
+    mkdir -p "$dir"
+
+    local filepath="${dir}/${session_id}.jsonl"
+    : > "$filepath"
+
+    echo '{"type":"queue-operation","operation":"enqueue","timestamp":"2026-03-28T23:58:00.000Z","sessionId":"'"${session_id}"'","content":"run the tests please"}' >> "$filepath"
+
+    echo '{"type":"user","sessionId":"'"${session_id}"'","cwd":"'"${HOME}/${project}"'","version":"2.1.86","gitBranch":"main","timestamp":"2026-03-28T23:58:01.000Z","message":{"role":"user","content":"run the tests please"}}' >> "$filepath"
+
+    echo '{"type":"assistant","timestamp":"2026-03-28T23:58:02.000Z","message":{"role":"assistant","model":"claude-opus-4-6","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":100,"output_tokens":50}}}' >> "$filepath"
+
+    echo "$filepath"
+}

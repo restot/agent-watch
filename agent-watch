@@ -20,7 +20,7 @@ fi
 
 set -euo pipefail
 
-VERSION="1.2.2"
+VERSION="1.2.3"
 PROJECTS_DIR="$HOME/.claude/projects"
 DEBUG=0
 OFFSET=0
@@ -316,7 +316,18 @@ view_agent() {
                     "@@HOOK@@ " + (.data.type // "progress")
                 end
             elif .type == "queue-operation" and .operation == "enqueue" and .content then
-                "@@HOOK@@ enqueue: " + .content
+                .content as $c |
+                if ($c | test("<task-notification>")) then
+                    "@@HOOK@@ enqueue: " + (($c | capture("<summary>(?<t>[^<]+)</summary>") | .t) // "task-notification")
+                elif ($c | test("<teammate-message")) then
+                    "@@HOOK@@ enqueue: " + (($c | capture("teammate_id=\"(?<id>[^\"]+)\"") | .id) // "teammate") + (($c | capture("summary=\"(?<s>[^\"]+)\"") | ": " + .s) // "")
+                elif ($c | test("FileChanged")) then
+                    "@@HOOK@@ enqueue: FileChanged"
+                elif ($c | test("<system-reminder>")) then
+                    "@@HOOK@@ enqueue: system-reminder"
+                else
+                    "@@HOOK@@ enqueue: " + ($c | split("\n") | .[0] | .[:80])
+                end
             else empty end
         ' 2>/dev/null | \
         if [[ -n "$workdir_escaped" ]]; then sed "s/$workdir_escaped\///g"; else cat; fi | \
@@ -451,7 +462,18 @@ view_agent_full() {
                     "@@HOOK@@ " + (.data.type // "progress")
                 end
             elif .type == "queue-operation" and .operation == "enqueue" and .content then
-                "@@HOOK@@ enqueue: " + .content
+                .content as $c |
+                if ($c | test("<task-notification>")) then
+                    "@@HOOK@@ enqueue: " + (($c | capture("<summary>(?<t>[^<]+)</summary>") | .t) // "task-notification")
+                elif ($c | test("<teammate-message")) then
+                    "@@HOOK@@ enqueue: " + (($c | capture("teammate_id=\"(?<id>[^\"]+)\"") | .id) // "teammate") + (($c | capture("summary=\"(?<s>[^\"]+)\"") | ": " + .s) // "")
+                elif ($c | test("FileChanged")) then
+                    "@@HOOK@@ enqueue: FileChanged"
+                elif ($c | test("<system-reminder>")) then
+                    "@@HOOK@@ enqueue: system-reminder"
+                else
+                    "@@HOOK@@ enqueue: " + ($c | split("\n") | .[0] | .[:80])
+                end
             else empty end
         ' 2>/dev/null | \
         if [[ -n "$workdir_escaped" ]]; then sed "s/$workdir_escaped\///g"; else cat; fi | \
@@ -586,7 +608,18 @@ watch_agent() {
                 "@@HOOK@@ " + (.data.type // "progress")
             end
         elif .type == "queue-operation" and .operation == "enqueue" and .content then
-            "@@HOOK@@ enqueue: " + .content
+            .content as $c |
+            if ($c | test("<task-notification>")) then
+                "@@HOOK@@ enqueue: " + (($c | capture("<summary>(?<t>[^<]+)</summary>") | .t) // "task-notification")
+            elif ($c | test("<teammate-message")) then
+                "@@HOOK@@ enqueue: " + (($c | capture("teammate_id=\"(?<id>[^\"]+)\"") | .id) // "teammate") + (($c | capture("summary=\"(?<s>[^\"]+)\"") | ": " + .s) // "")
+            elif ($c | test("FileChanged")) then
+                "@@HOOK@@ enqueue: FileChanged"
+            elif ($c | test("<system-reminder>")) then
+                "@@HOOK@@ enqueue: system-reminder"
+            else
+                "@@HOOK@@ enqueue: " + ($c | split("\n") | .[0] | .[:80])
+            end
         else empty end
     ' 2>/dev/null | \
     { if [[ -n "$workdir_escaped" ]]; then sed -u "s/$workdir_escaped\///g"; else cat; fi; } | \

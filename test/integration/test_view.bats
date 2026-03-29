@@ -357,6 +357,69 @@ load '../test_helper/fixtures'
     [[ "$output" == *"[HOOK]"*"agent_progress"* ]]
 }
 
+@test "view_agent renders queue-operation enqueue as [HOOK]" {
+    local filepath
+    filepath=$(create_session_with_queue_ops "myproject" "sess-queue1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[HOOK]"*"enqueue:"* ]]
+    [[ "$output" == *"FileChanged"* ]]
+}
+
+@test "view_agent skips queue-operation dequeue" {
+    local filepath
+    filepath=$(create_session_with_queue_ops "myproject" "sess-queue2")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    # dequeue should not appear
+    [[ "$output" != *"dequeue"* ]]
+}
+
+@test "view_agent renders task-notification enqueue with summary" {
+    local filepath
+    filepath=$(create_session_with_task_enqueue "myproject" "sess-task1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[HOOK]"*"enqueue:"* ]]
+    [[ "$output" == *"Code review"* ]]
+    # Should NOT contain raw XML tags
+    [[ "$output" != *"<task-notification>"* ]]
+}
+
+@test "view_agent renders teammate-message enqueue with teammate_id" {
+    local filepath
+    filepath=$(create_session_with_teammate_enqueue "myproject" "sess-tm1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[HOOK]"*"enqueue:"* ]]
+    [[ "$output" == *"agent1"* ]]
+    [[ "$output" == *"build finished"* ]]
+}
+
+@test "view_agent renders plain-text enqueue with first line" {
+    local filepath
+    filepath=$(create_session_with_plain_enqueue "myproject" "sess-plain1")
+
+    _COLOR=0
+    LIMIT=5000
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[HOOK]"*"enqueue:"* ]]
+    [[ "$output" == *"run the tests please"* ]]
+}
+
 @test "view_agent with NO_COLOR renders COMPACT and HOOK as plain text" {
     local filepath
     filepath=$(create_session_with_compaction "myproject" "sess-nocolor-c")
