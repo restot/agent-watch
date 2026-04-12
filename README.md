@@ -121,6 +121,7 @@ Pagination (for large sessions/agents):
   --last [N]          Show last message, or last N tokens (no header, no pager)
 
 Other flags:
+  --skip-tool-output  Show tool calls and args but hide tool result output
   --no-color          Disable colored output (also respects NO_COLOR env var)
   --debug             Show debug output
   --help              Show this help message
@@ -172,6 +173,12 @@ Show the last 5000 tokens of a session (chronological order):
 
 ```sh
 agent-watch abc123de --last 5000
+```
+
+View agent decision flow without tool result noise:
+
+```sh
+agent-watch abc123de --skip-tool-output --limit 5000
 ```
 
 Disable colors (useful when calling from agents to save tokens):
@@ -253,9 +260,12 @@ See the [wiki](https://github.com/restot/agent-watch/wiki) for guides and screen
 
 1. Fork the repo
 2. Create a branch (`git checkout -b my-feature`)
-3. Make your changes to the `agent-watch` script
-4. Run the test suite: `make test` (or `make docker-test` to run in Docker)
-5. Submit a PR
+3. Edit source modules in `cli/`
+4. Build: `./build.sh` (assembles `bin/agent-watch`, runs syntax check)
+5. Run tests: `make test` (or `make docker-test` to run in Docker)
+6. Submit a PR
+
+Source modules live in `cli/`, assembled by `build.sh` into `bin/agent-watch`. The root `agent-watch` is the legacy monolith kept for backwards compatibility.
 
 CI runs on both Ubuntu and macOS to catch GNU/BSD differences. Quick syntax + unit check: `make check`.
 

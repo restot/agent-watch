@@ -111,6 +111,15 @@ teardown() {
     [[ "$output" == *"No agent or session found"* ]]
 }
 
+@test "agent-watch --skip-tool-output hides [RESULT] but shows [TOOL]" {
+    create_agent_with_tools "test-project" "sess-111aaa222" "tools-e2e" >/dev/null
+    run env HOME="$FAKE_HOME" "$AW" --skip-tool-output --limit 5000 tools-e2e
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[TOOL]"* ]]
+    [[ "$output" == *"Bash"* ]]
+    [[ "$output" != *"[RESULT]"* ]]
+}
+
 @test "agent-watch session with compaction shows [COMPACT] and [SUMMARY]" {
     create_session_with_compaction "test-project" "sess-compact-e2e" >/dev/null
     run env HOME="$FAKE_HOME" "$AW" session --limit 5000 sess-compact-e2e

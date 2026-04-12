@@ -114,6 +114,11 @@ load '../test_helper/common'
     [[ "$output" == *"NO_COLOR"* ]]
 }
 
+@test "show_usage contains --skip-tool-output" {
+    run show_usage
+    [[ "$output" == *"--skip-tool-output"* ]]
+}
+
 # --- NO_COLOR support ---
 
 @test "NO_COLOR env var disables color variables" {

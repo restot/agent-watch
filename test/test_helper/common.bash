@@ -28,6 +28,7 @@ setup() {
     OFFSET=0
     LIMIT=0
     LAST=0
+    SKIP_TOOL_OUTPUT=0
 }
 
 teardown() {

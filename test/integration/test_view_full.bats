@@ -53,6 +53,33 @@ load '../test_helper/fixtures'
     [[ "$output" == *"[RESULT]"* ]]
 }
 
+# ── --skip-tool-output ──────────────────────────────────────────
+
+@test "view_agent_full --skip-tool-output hides [RESULT] but keeps [TOOL]" {
+    local filepath
+    filepath=$(create_agent_with_tools "myproject" "sess1" "skip1")
+
+    LIMIT=5000
+    SKIP_TOOL_OUTPUT=1
+    run view_agent_full "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[TOOL]"* ]]
+    [[ "$output" == *"Bash"* ]]
+    [[ "$output" != *"[RESULT]"* ]]
+    [[ "$output" != *"file1.txt"* ]]
+}
+
+@test "view_agent_full --skip-tool-output --last 1 excludes tool_result" {
+    local filepath
+    filepath=$(create_agent_with_tools "myproject" "sess1" "skip2")
+
+    LAST=1
+    SKIP_TOOL_OUTPUT=1
+    run view_agent_full "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"[RESULT]"* ]]
+}
+
 # ── --last mode ──────────────────────────────────────────────────
 
 @test "view_agent_full --last 1 shows last message content" {

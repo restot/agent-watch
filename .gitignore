@@ -1,5 +1,8 @@
 */**
 !agent-watch
+!build.sh
+!cli/**
+!bin/agent-watch
 !LICENSE
 !README.md
 !CHANGELOG.md

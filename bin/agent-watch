@@ -56,6 +56,7 @@ else
     _COLOR=1
 fi
 
+
 _setup_colors() {
     if (( _COLOR )); then
         RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m'
@@ -138,6 +139,7 @@ _fmt_tokens() {
     fi
 }
 
+
 get_agent_files() {
     # Return 20 most recent agents, excluding prompt suggestions
     local files
@@ -176,6 +178,7 @@ format_agent_line() {
     fi
 
     printf "%s|%s|%s|%s|%s|%s|%s\n" "$status" "$agent_id" "$mod_time" "$last_type" "$msg_count" "$project" "$filepath"
+
 }
 
 # Print rich metadata header from a session/agent JSONL file.
@@ -251,6 +254,56 @@ _print_metadata_header() {
     echo -e "${DIM}───────────────────────────────────────${NC}"
     echo ""
 }
+
+get_session_files() {
+    # Return all main session JSONL files (not sub-agents), sorted by mtime
+    local files
+    files=$(find "$PROJECTS_DIR" -maxdepth 2 -name "*.jsonl" -type f 2>/dev/null | grep -vE '/subagents/' || true)
+    [[ -n "$files" ]] && echo "$files" | xargs ls -t 2>/dev/null || true
+}
+
+# Batch-preload session metadata into associative arrays.
+# Call once before loops that need session info. Populates:
+#   _PROMPT[sessionId]  — first prompt (truncated, cleaned)
+#   _STAT[filepath]     — "mm/dd HH:MM epoch"
+#   _WC[filepath]       — message count
+_preload_session_data() {
+    local files_list="$1"
+
+    # Batch prompts: single jq per index file
+    declare -gA _PROMPT
+    while IFS=$'\t' read -r sid prompt; do
+        [[ -n "$sid" ]] && _PROMPT["$sid"]="$prompt"
+    done < <(
+        find "$PROJECTS_DIR" -maxdepth 2 -name "sessions-index.json" -type f 2>/dev/null | \
+        xargs jq -r '.entries[] | [.sessionId, (.firstPrompt // "" | gsub("[\\n\\t]"; " ") | .[:60])] | @tsv' 2>/dev/null
+    )
+
+    # Batch stat: one call for all files → "filepath mm/dd HH:MM epoch"
+    declare -gA _STAT
+    while IFS= read -r line; do
+        local fpath="${line%%.jsonl *}.jsonl"
+        local rest="${line#*.jsonl }"
+        _STAT["$fpath"]="$rest"
+    done < <(
+        if [[ "$_STAT_CMD" == "bsd" ]]; then
+            echo "$files_list" | xargs stat -f "%N %Sm %m" -t "%m/%d %H:%M" 2>/dev/null
+        else
+            echo "$files_list" | xargs stat --printf="%n %y %Y\n" 2>/dev/null | \
+                awk '{ split($2,d,"-"); split($3,t,":"); printf "%s %s/%s %s:%s %s\n", $1, d[2], d[3], t[1], t[2], $4 }'
+        fi
+    )
+
+    # Batch wc -l: one call for all files
+    declare -gA _WC
+    local _wc_n _wc_f
+    while read -r _wc_n _wc_f; do
+        [[ "$_wc_f" == "total" ]] && continue
+        [[ -n "$_wc_f" ]] && _WC["$_wc_f"]="${_wc_n## }"
+    done < <(echo "$files_list" | xargs wc -l 2>/dev/null)
+}
+
+
 
 view_agent() {
     local filepath="$1"
@@ -552,6 +605,7 @@ view_agent_full() {
     fi
 }
 
+
 watch_agent() {
     local filepath="$1"
     debug " entered watch_agent with [$filepath]"
@@ -634,196 +688,6 @@ watch_agent() {
     _color_sed_u
 }
 
-get_session_files() {
-    # Return all main session JSONL files (not sub-agents), sorted by mtime
-    local files
-    files=$(find "$PROJECTS_DIR" -maxdepth 2 -name "*.jsonl" -type f 2>/dev/null | grep -vE '/subagents/' || true)
-    [[ -n "$files" ]] && echo "$files" | xargs ls -t 2>/dev/null || true
-}
-
-# Batch-preload session metadata into associative arrays.
-# Call once before loops that need session info. Populates:
-#   _PROMPT[sessionId]  — first prompt (truncated, cleaned)
-#   _STAT[filepath]     — "mm/dd HH:MM epoch"
-#   _WC[filepath]       — message count
-_preload_session_data() {
-    local files_list="$1"
-
-    # Batch prompts: single jq per index file
-    declare -gA _PROMPT
-    while IFS=$'\t' read -r sid prompt; do
-        [[ -n "$sid" ]] && _PROMPT["$sid"]="$prompt"
-    done < <(
-        find "$PROJECTS_DIR" -maxdepth 2 -name "sessions-index.json" -type f 2>/dev/null | \
-        xargs jq -r '.entries[] | [.sessionId, (.firstPrompt // "" | gsub("[\\n\\t]"; " ") | .[:60])] | @tsv' 2>/dev/null
-    )
-
-    # Batch stat: one call for all files → "filepath mm/dd HH:MM epoch"
-    declare -gA _STAT
-    while IFS= read -r line; do
-        local fpath="${line%%.jsonl *}.jsonl"
-        local rest="${line#*.jsonl }"
-        _STAT["$fpath"]="$rest"
-    done < <(
-        if [[ "$_STAT_CMD" == "bsd" ]]; then
-            echo "$files_list" | xargs stat -f "%N %Sm %m" -t "%m/%d %H:%M" 2>/dev/null
-        else
-            echo "$files_list" | xargs stat --printf="%n %y %Y\n" 2>/dev/null | \
-                awk '{ split($2,d,"-"); split($3,t,":"); printf "%s %s/%s %s:%s %s\n", $1, d[2], d[3], t[1], t[2], $4 }'
-        fi
-    )
-
-    # Batch wc -l: one call for all files
-    declare -gA _WC
-    local _wc_n _wc_f
-    while read -r _wc_n _wc_f; do
-        [[ "$_wc_f" == "total" ]] && continue
-        [[ -n "$_wc_f" ]] && _WC["$_wc_f"]="${_wc_n## }"
-    done < <(echo "$files_list" | xargs wc -l 2>/dev/null)
-}
-
-cmd_sessions() {
-    local input="${1:-}"
-
-    # If a session ID is provided, view it directly
-    if [[ -n "$input" ]]; then
-        local filepath
-        if [[ -f "$input" ]]; then
-            filepath="$input"
-        else
-            filepath=$(find "$PROJECTS_DIR" -maxdepth 2 -name "${input}*.jsonl" -type f 2>/dev/null | grep -v '/subagents/' | head -1)
-            if [[ -z "$filepath" ]]; then
-                die "Session $input not found"
-            fi
-        fi
-        view_agent "$filepath"
-        return
-    fi
-
-    command -v fzf >/dev/null 2>&1 || die "Required for interactive mode: fzf (https://github.com/junegunn/fzf)"
-
-    local files
-    files=$(get_session_files)
-
-    if [[ -z "$files" ]]; then
-        die "No sessions found"
-    fi
-
-    # Batch preload all metadata
-    _preload_session_data "$files"
-    local now
-    now=$(date +%s)
-
-    # Preview script for fzf (runs on-demand per item, not upfront for all)
-    local preview_script
-    preview_script=$(mktemp)
-    trap "rm -f '$preview_script'" EXIT
-    cat > "$preview_script" << 'PREVIEW_SCRIPT'
-#!/usr/bin/env bash
-set +e
-f="$1"
-sid=$(basename "$f" .jsonl)
-msgs=$(wc -l < "$f" 2>/dev/null | tr -d ' ')
-echo -e "\033[0;36mSession: $sid\033[0m"
-echo -e "\033[2mMessages:   \033[0m${msgs}"
-echo -e "\033[2m───────────────────────────────────────\033[0m"
-echo ""
-head -30 "$f" 2>/dev/null | jq -r '
-    if .type == "user" then
-        if .isCompactSummary then
-            "\u001b[2;36m[SUMMARY]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
-        else
-            "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
-        end
-    elif .type == "assistant" then
-        (.message.content // [])[] |
-        if .type == "text" then
-            "\u001b[0;35m[ASST]\u001b[0m " + .text
-        elif .type == "tool_use" then
-            "\u001b[0;34m[TOOL]\u001b[0m \u001b[0;33m" + .name + "\u001b[0m " + (.input | tostring)
-        else empty end
-    elif .type == "system" then
-        if .subtype == "compact_boundary" or .subtype == "microcompact_boundary" then
-            "\u001b[1;36m[COMPACT]\u001b[0m " + (.content // "")
-        elif ((.hookInfos // []) | length) > 0 then
-            (.hookInfos[] | "\u001b[2;33m[HOOK]\u001b[0m " + ((.command // "") | split("/") | .[-3:] | join("/")) + " (" + ((.durationMs // 0) | tostring) + "ms)")
-        else
-            "\u001b[2m[SYSTEM]\u001b[0m " + (.subtype // "system") + (if .content then ": " + (.content | tostring) else "" end)
-        end
-    elif .type == "progress" then
-        if .data.command == "callback" then empty
-        elif .data.hookName then
-            "\u001b[2;33m[HOOK]\u001b[0m " + .data.hookName + " \u2192 " + ((.data.command // "") | split("/") | last)
-        else
-            "\u001b[2;33m[HOOK]\u001b[0m " + (.data.type // "progress")
-        end
-    else empty end
-' 2>/dev/null
-PREVIEW_SCRIPT
-    chmod +x "$preview_script"
-
-    local fzf_out key selection filepath
-    fzf_out=$(while IFS= read -r filepath; do
-        [[ -z "$filepath" ]] && continue
-
-        local session_id="${filepath##*/}"
-        session_id="${session_id%.jsonl}"
-        local short_id="${session_id:0:8}"
-        local dir="${filepath%/*}"
-        local project_dir="${dir##*/}"
-
-        local first_prompt="${_PROMPT[$session_id]:-}"
-        local msg_count="${_WC[$filepath]:-0}"
-        msg_count="${msg_count## }"
-
-        local stat_data="${_STAT[$filepath]:-}"
-        local mod_date mod_time mod_epoch st
-        if [[ -n "$stat_data" ]]; then
-            mod_date="${stat_data%% *}"
-            local rest="${stat_data#* }"
-            mod_time="${rest%% *}"
-            mod_epoch="${rest#* }"
-        else
-            mod_date="??/??"; mod_time="??:??"; mod_epoch=0
-        fi
-        [[ $((now - mod_epoch)) -lt 30 ]] && st="●" || st=" "
-
-        local project_name="${project_dir#-${_HOME_PATTERN}}"
-        project_name="${project_name#-}"
-        [[ -z "$project_name" ]] && project_name="~"
-
-        printf "%-1s %-8s  %-11s  %4s  %-30s  %-60s\t%s\n" \
-            "$st" "$short_id" "$mod_date $mod_time" "$msg_count" "$project_name" "$first_prompt" "$filepath"
-    done <<< "$files" | \
-        fzf --ansi \
-            --delimiter='\t' \
-            --header="enter=watch | alt-w=view | alt-f=full" \
-            --preview="$preview_script {2}" \
-            --preview-window=right:50% \
-            --expect=alt-w,alt-f \
-            --with-nth=1) || exit 0
-
-    key=$(echo "$fzf_out" | head -1)
-    selection=$(echo "$fzf_out" | sed -n '2p')
-
-    [[ -z "$selection" ]] && exit 0
-
-    filepath=$(echo "$selection" | cut -d$'\t' -f2)
-
-    [[ ! -f "$filepath" ]] && die "Session file not found: $filepath"
-
-    # Clean up
-    rm -f "$preview_script"
-    trap - EXIT
-
-    if [[ "$key" == "alt-w" ]]; then
-        view_agent "$filepath"
-    elif [[ "$key" == "alt-f" ]]; then
-        view_agent_full "$filepath"
-    else
-        watch_agent "$filepath" < /dev/tty
-    fi
-}
 
 cmd_list() {
     local count=20
@@ -952,6 +816,150 @@ cmd_list_sessions() {
     done <<< "$files"
 }
 
+
+cmd_sessions() {
+    local input="${1:-}"
+
+    # If a session ID is provided, view it directly
+    if [[ -n "$input" ]]; then
+        local filepath
+        if [[ -f "$input" ]]; then
+            filepath="$input"
+        else
+            filepath=$(find "$PROJECTS_DIR" -maxdepth 2 -name "${input}*.jsonl" -type f 2>/dev/null | grep -v '/subagents/' | head -1)
+            if [[ -z "$filepath" ]]; then
+                die "Session $input not found"
+            fi
+        fi
+        view_agent "$filepath"
+        return
+    fi
+
+    command -v fzf >/dev/null 2>&1 || die "Required for interactive mode: fzf (https://github.com/junegunn/fzf)"
+
+    local files
+    files=$(get_session_files)
+
+    if [[ -z "$files" ]]; then
+        die "No sessions found"
+    fi
+
+    # Batch preload all metadata
+    _preload_session_data "$files"
+    local now
+    now=$(date +%s)
+
+    # Preview script for fzf (runs on-demand per item, not upfront for all)
+    local preview_script
+    preview_script=$(mktemp)
+    trap "rm -f '$preview_script'" EXIT
+    cat > "$preview_script" << 'PREVIEW_SCRIPT'
+set +e
+f="$1"
+sid=$(basename "$f" .jsonl)
+msgs=$(wc -l < "$f" 2>/dev/null | tr -d ' ')
+echo -e "\033[0;36mSession: $sid\033[0m"
+echo -e "\033[2mMessages:   \033[0m${msgs}"
+echo -e "\033[2m───────────────────────────────────────\033[0m"
+echo ""
+head -30 "$f" 2>/dev/null | jq -r '
+    if .type == "user" then
+        if .isCompactSummary then
+            "\u001b[2;36m[SUMMARY]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+        else
+            "\u001b[0;32m[USER]\u001b[0m " + (if .message.content | type == "string" then .message.content else .message.content[0].text // "" end)
+        end
+    elif .type == "assistant" then
+        (.message.content // [])[] |
+        if .type == "text" then
+            "\u001b[0;35m[ASST]\u001b[0m " + .text
+        elif .type == "tool_use" then
+            "\u001b[0;34m[TOOL]\u001b[0m \u001b[0;33m" + .name + "\u001b[0m " + (.input | tostring)
+        else empty end
+    elif .type == "system" then
+        if .subtype == "compact_boundary" or .subtype == "microcompact_boundary" then
+            "\u001b[1;36m[COMPACT]\u001b[0m " + (.content // "")
+        elif ((.hookInfos // []) | length) > 0 then
+            (.hookInfos[] | "\u001b[2;33m[HOOK]\u001b[0m " + ((.command // "") | split("/") | .[-3:] | join("/")) + " (" + ((.durationMs // 0) | tostring) + "ms)")
+        else
+            "\u001b[2m[SYSTEM]\u001b[0m " + (.subtype // "system") + (if .content then ": " + (.content | tostring) else "" end)
+        end
+    elif .type == "progress" then
+        if .data.command == "callback" then empty
+        elif .data.hookName then
+            "\u001b[2;33m[HOOK]\u001b[0m " + .data.hookName + " \u2192 " + ((.data.command // "") | split("/") | last)
+        else
+            "\u001b[2;33m[HOOK]\u001b[0m " + (.data.type // "progress")
+        end
+    else empty end
+' 2>/dev/null
+PREVIEW_SCRIPT
+    chmod +x "$preview_script"
+
+    local fzf_out key selection filepath
+    fzf_out=$(while IFS= read -r filepath; do
+        [[ -z "$filepath" ]] && continue
+
+        local session_id="${filepath##*/}"
+        session_id="${session_id%.jsonl}"
+        local short_id="${session_id:0:8}"
+        local dir="${filepath%/*}"
+        local project_dir="${dir##*/}"
+
+        local first_prompt="${_PROMPT[$session_id]:-}"
+        local msg_count="${_WC[$filepath]:-0}"
+        msg_count="${msg_count## }"
+
+        local stat_data="${_STAT[$filepath]:-}"
+        local mod_date mod_time mod_epoch st
+        if [[ -n "$stat_data" ]]; then
+            mod_date="${stat_data%% *}"
+            local rest="${stat_data#* }"
+            mod_time="${rest%% *}"
+            mod_epoch="${rest#* }"
+        else
+            mod_date="??/??"; mod_time="??:??"; mod_epoch=0
+        fi
+        [[ $((now - mod_epoch)) -lt 30 ]] && st="●" || st=" "
+
+        local project_name="${project_dir#-${_HOME_PATTERN}}"
+        project_name="${project_name#-}"
+        [[ -z "$project_name" ]] && project_name="~"
+
+        printf "%-1s %-8s  %-11s  %4s  %-30s  %-60s\t%s\n" \
+            "$st" "$short_id" "$mod_date $mod_time" "$msg_count" "$project_name" "$first_prompt" "$filepath"
+    done <<< "$files" | \
+        fzf --ansi \
+            --delimiter='\t' \
+            --header="enter=watch | alt-w=view | alt-f=full" \
+            --preview="$preview_script {2}" \
+            --preview-window=right:50% \
+            --expect=alt-w,alt-f \
+            --with-nth=1) || exit 0
+
+    key=$(echo "$fzf_out" | head -1)
+    selection=$(echo "$fzf_out" | sed -n '2p')
+
+    [[ -z "$selection" ]] && exit 0
+
+    filepath=$(echo "$selection" | cut -d$'\t' -f2)
+
+    [[ ! -f "$filepath" ]] && die "Session file not found: $filepath"
+
+    # Clean up
+    rm -f "$preview_script"
+    trap - EXIT
+
+    if [[ "$key" == "alt-w" ]]; then
+        view_agent "$filepath"
+    elif [[ "$key" == "alt-f" ]]; then
+        view_agent_full "$filepath"
+    else
+        watch_agent "$filepath" < /dev/tty
+    fi
+}
+
+
 cmd_interactive() {
     command -v fzf >/dev/null 2>&1 || die "Required for interactive mode: fzf (https://github.com/junegunn/fzf)"
 
@@ -967,7 +975,6 @@ cmd_interactive() {
     preview_script=$(mktemp)
     trap "rm -f '$preview_script'" EXIT
     cat > "$preview_script" << 'PREVIEW_SCRIPT'
-#!/usr/bin/env bash
 set +e
 f="$1"
 aid=$(basename "$f" .jsonl | sed 's/agent-//')
@@ -1066,6 +1073,7 @@ PREVIEW_SCRIPT
         watch_agent "$filepath" < /dev/tty
     fi
 }
+
 
 _resolve_id() {
     # Resolve an input (filepath, agent ID, or session ID) to a JSONL filepath.
@@ -1209,6 +1217,7 @@ cmd_wait() {
     return 0
 }
 
+
 show_usage() {
     cat <<EOF
 Usage: agent-watch [command] [args] [flags]
@@ -1270,6 +1279,7 @@ Examples:
   agent-watch abc123 --offset 50 --limit 5000   # Paginate from message 50
 EOF
 }
+
 
 # Allow sourcing for tests: source all functions without running arg parsing
 [[ "${AGENT_WATCH_SOURCED:-}" == "1" ]] && return 0 2>/dev/null || true

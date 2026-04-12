@@ -56,3 +56,11 @@ AW="$BATS_TEST_DIRNAME/../../agent-watch"
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"Usage: agent-watch"* ]]
 }
+
+# --- --skip-tool-output ---
+
+@test "--skip-tool-output --help still reaches help" {
+    run "$AW" --skip-tool-output --help
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Usage: agent-watch"* ]]
+}

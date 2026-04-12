@@ -153,6 +153,48 @@ load '../test_helper/fixtures'
     [[ "$output" == *"[RESULT]"* ]]
 }
 
+# ── --skip-tool-output ──────────────────────────────────────────
+
+@test "view_agent --skip-tool-output hides [RESULT] but keeps [TOOL]" {
+    local filepath
+    filepath=$(create_agent_with_tools "myproject" "sess1" "skip1")
+
+    LIMIT=5000
+    SKIP_TOOL_OUTPUT=1
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[TOOL]"* ]]
+    [[ "$output" == *"Bash"* ]]
+    [[ "$output" != *"[RESULT]"* ]]
+    [[ "$output" != *"file1.txt"* ]]
+}
+
+@test "view_agent --skip-tool-output preserves user and assistant content" {
+    local filepath
+    filepath=$(create_agent_with_tools "myproject" "sess1" "skip2")
+
+    LIMIT=5000
+    SKIP_TOOL_OUTPUT=1
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[USER]"* ]]
+    [[ "$output" == *"[ASST]"* ]]
+    [[ "$output" == *"list files"* ]]
+    [[ "$output" == *"I found file1.txt"* ]]
+}
+
+@test "view_agent --skip-tool-output --last 1 excludes tool_result from last message" {
+    local filepath
+    filepath=$(create_agent_with_tools "myproject" "sess1" "skip3")
+
+    LAST=1
+    SKIP_TOOL_OUTPUT=1
+    run view_agent "$filepath"
+    [ "$status" -eq 0 ]
+    # Last renderable message should be assistant text, not tool_result
+    [[ "$output" != *"[RESULT]"* ]]
+}
+
 # ── colorized markers ────────────────────────────────────────────
 
 @test "view_agent shows colorized USER and ASST markers" {

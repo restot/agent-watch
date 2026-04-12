@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0
+
+- **`--skip-tool-output` flag** -- show tool calls and their arguments (`[TOOL]`) but suppress tool result output (`[RESULT]`). Works across all render paths: view, view full, watch, and `--last` mode. Useful for reading agent decision flow without the noise of large tool outputs.
+- **Modular source layout** -- decomposed the monolithic script into 12 source modules in `cli/`, assembled by `build.sh` into `bin/agent-watch`. No behavioral changes; same functionality, now easier to navigate and maintain.
+- **8 new tests** -- unit, integration, and e2e coverage for `--skip-tool-output` across view, view full, and last-message modes.
+
 ## 1.2.3
 
 - **Enqueue initiator extraction** -- queue-operation enqueue entries now show a concise initiator instead of raw XML content. Task notifications display the summary (e.g. `Agent "Code review" completed`), teammate messages show the sender and summary (e.g. `bootstrap: build finished`), FileChanged hooks display as `FileChanged`, and plain-text queued input shows the first 80 characters.
